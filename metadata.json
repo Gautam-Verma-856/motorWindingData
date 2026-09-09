@@ -1,0 +1,6 @@
+{
+  "name": "Motor Winding Data",
+  "description": "Store and display Single Phase and 3 Phase Motor winding data.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
