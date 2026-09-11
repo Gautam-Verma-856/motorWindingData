@@ -25,6 +25,9 @@ fun NavGraph() {
         composable("home") {
             HomeScreen(navController = navController, currentUser = currentUser, onLogout = { authViewModel.logout() })
         }
+        composable("contact") {
+            ContactScreen(navController = navController)
+        }
         composable("admin_login") {
             AdminLoginScreen(navController = navController, authViewModel = authViewModel)
         }
@@ -45,7 +48,13 @@ fun NavGraph() {
             arguments = listOf(navArgument("type") { type = NavType.StringType })
         ) { backStackEntry ->
             val type = backStackEntry.arguments?.getString("type") ?: "single"
-            MotorListScreen(navController = navController, motorViewModel = motorViewModel, type = type, role = currentUser?.role ?: "public")
+            MotorListScreen(
+                navController = navController, 
+                motorViewModel = motorViewModel, 
+                type = type, 
+                role = currentUser?.role ?: "public",
+                currentUserId = currentUser?.id
+            )
         }
         composable(
             "motor_detail/{type}/{id}",
@@ -67,10 +76,18 @@ fun NavGraph() {
         ) { backStackEntry ->
             val type = backStackEntry.arguments?.getString("type") ?: "single"
             val id = backStackEntry.arguments?.getString("id")
-            AddEditMotorScreen(navController = navController, motorViewModel = motorViewModel, type = type, id = id)
+            AddEditMotorScreen(navController = navController, motorViewModel = motorViewModel, type = type, id = id, authViewModel = authViewModel)
         }
-        composable("user_management") {
-            UserManagementScreen(navController = navController, authViewModel = authViewModel)
+        composable(
+            "user_management?filter={filter}",
+            arguments = listOf(navArgument("filter") { 
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            })
+        ) { backStackEntry ->
+            val filter = backStackEntry.arguments?.getString("filter")
+            UserManagementScreen(navController = navController, authViewModel = authViewModel, initialFilter = filter)
         }
     }
 }

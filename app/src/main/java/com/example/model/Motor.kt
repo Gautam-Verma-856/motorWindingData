@@ -15,7 +15,8 @@ data class SinglePhaseMotor(
     val startingSwg: String = "",
     val startingWeight: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val createdBy: String = ""
+    val createdBy: String = "",
+    val status: String = "approved"
 )
 
 data class ThreePhaseMotor(
@@ -29,5 +30,6 @@ data class ThreePhaseMotor(
     val swg: String = "",
     val weight: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val createdBy: String = ""
+    val createdBy: String = "",
+    val status: String = "approved"
 )

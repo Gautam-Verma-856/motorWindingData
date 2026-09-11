@@ -52,6 +52,15 @@ class MotorRepository {
         }
     }
 
+    suspend fun updateSinglePhaseStatus(id: String, status: String): Result<Unit> {
+        return try {
+            db.collection("single_phase_motors").document(id).update("status", status).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun saveThreePhaseMotor(motor: ThreePhaseMotor): Result<Unit> {
         return try {
             val id = motor.id.ifEmpty { db.collection("three_phase_motors").document().id }
@@ -74,6 +83,15 @@ class MotorRepository {
     suspend fun deleteThreePhaseMotor(id: String): Result<Unit> {
         return try {
             db.collection("three_phase_motors").document(id).delete().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateThreePhaseStatus(id: String, status: String): Result<Unit> {
+        return try {
+            db.collection("three_phase_motors").document(id).update("status", status).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

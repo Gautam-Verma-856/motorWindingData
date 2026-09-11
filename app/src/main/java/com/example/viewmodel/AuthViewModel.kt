@@ -26,6 +26,9 @@ class AuthViewModel : ViewModel() {
     
     private val _usersList = MutableStateFlow<List<User>>(emptyList())
     val usersList = _usersList.asStateFlow()
+    
+    private val _isFetchingUsers = MutableStateFlow(false)
+    val isFetchingUsers = _isFetchingUsers.asStateFlow()
 
     init {
         checkSession()
@@ -35,8 +38,14 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             val user = repo.fetchCurrentUserProfile()
             if (user != null) {
-                _currentUser.value = user
-                _authState.value = AuthState.Success(user)
+                if (user.role == "public" && user.accountStatus != "active") {
+                    repo.logout()
+                    _currentUser.value = null
+                    _authState.value = AuthState.Idle
+                } else {
+                    _currentUser.value = user
+                    _authState.value = AuthState.Success(user)
+                }
             }
         }
     }
@@ -55,10 +64,10 @@ class AuthViewModel : ViewModel() {
         }
     }
 
-    fun register(name: String, email: String, pass: String) {
+    fun register(name: String, email: String, mobile: String, pass: String) {
         _authState.value = AuthState.Loading
         viewModelScope.launch {
-            val res = repo.registerPublicUser(name, email, pass)
+            val res = repo.registerPublicUser(name, email, mobile, pass)
             res.onSuccess {
                 _currentUser.value = it
                 _authState.value = AuthState.Success(it)
@@ -77,8 +86,10 @@ class AuthViewModel : ViewModel() {
     
     fun fetchUsers() {
         viewModelScope.launch {
+            _isFetchingUsers.value = true
             val res = repo.getAllUsers()
             res.onSuccess { _usersList.value = it }
+            _isFetchingUsers.value = false
         }
     }
     
