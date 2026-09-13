@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
 import com.example.ui.navigation.NavGraph
+import com.example.ui.components.AppUpdateWrapper
 import com.example.ui.theme.MyApplicationTheme
 import com.google.firebase.FirebaseApp
 
@@ -48,7 +49,9 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     } else {
-                        NavGraph()
+                        AppUpdateWrapper {
+                            NavGraph()
+                        }
                     }
                 }
             }

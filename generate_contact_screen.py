@@ -1,4 +1,6 @@
-package com.example.ui.screens
+import os
+
+new_code = """package com.example.ui.screens
 
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -35,8 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import kotlinx.coroutines.delay
 import androidx.compose.ui.graphics.vector.PathBuilder
-import androidx.compose.ui.graphics.vector.path
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.SolidColor
 import com.example.BuildConfig
 
@@ -57,8 +57,8 @@ val InstagramIcon: ImageVector
         viewportHeight = 24f
     ).apply {
         path(
-            fill = SolidColor(Color.White)
-        ) {
+            fill = SolidColor(Color.White),
+            pathBuilder = {
                 moveTo(12f, 2.163f)
                 curveTo(15.204f, 2.163f, 15.584f, 2.175f, 16.85f, 2.233f)
                 curveTo(20.102f, 2.381f, 21.621f, 3.924f, 21.769f, 7.152f)
@@ -106,6 +106,7 @@ val InstagramIcon: ImageVector
                 curveTo(19.846f, 4.799f, 19.202f, 4.155f, 18.406f, 4.155f)
                 close()
             }
+        )
     }.build()
 
 val WhatsAppIcon: ImageVector
@@ -117,8 +118,8 @@ val WhatsAppIcon: ImageVector
         viewportHeight = 24f
     ).apply {
         path(
-            fill = SolidColor(Color.White)
-        ) {
+            fill = SolidColor(Color.White),
+            pathBuilder = {
                 moveTo(17.472f, 14.382f)
                 curveTo(17.175f, 14.233f, 15.714f, 13.515f, 15.442f, 13.415f)
                 curveTo(15.169f, 13.316f, 14.971f, 13.267f, 14.772f, 13.565f)
@@ -168,6 +169,7 @@ val WhatsAppIcon: ImageVector
                 curveTo(23.943f, 9.324f, 22.709f, 6.332f, 20.464f, 4.086f)
                 close()
             }
+        )
     }.build()
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -270,7 +272,7 @@ fun ContactScreen(navController: NavController) {
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold,
-                                letterSpacing = 1.2.sp
+                                letterSpacing = 1.2.dp
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
@@ -496,3 +498,7 @@ private fun openUrl(context: Context, url: String) {
         Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
     }
 }
+"""
+
+with open("app/src/main/java/com/example/ui/screens/ContactScreen.kt", "w") as f:
+    f.write(new_code)
