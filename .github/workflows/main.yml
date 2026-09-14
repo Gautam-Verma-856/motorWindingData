@@ -18,6 +18,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Restore Debug Keystore
+        env:
+          DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$DEBUG_KEYSTORE_BASE64" ]; then
+            echo "Error: DEBUG_KEYSTORE_BASE64 secret is missing."
+            echo "You must add the DEBUG_KEYSTORE_BASE64 secret to your GitHub repository."
+            echo "1. Go to your AI Studio project, and run 'base64 -w 0 debug.keystore > debug.keystore.base64'"
+            echo "2. Copy the contents of the generated debug.keystore.base64 file."
+            echo "3. In GitHub, go to Settings -> Secrets and variables -> Actions -> New repository secret"
+            echo "4. Name it DEBUG_KEYSTORE_BASE64 and paste the contents."
+            exit 1
+          fi
+          echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > debug.keystore
+
       - name: Restore Firebase Config
         run: cp app/google-services-public.json app/google-services.json
 
