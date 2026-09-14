@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "93313864036",
+    "project_id": "motorwindingdata-bb564",
+    "storage_bucket": "motorwindingdata-bb564.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:93313864036:android:427f82039fb0130b4aea71",
+        "android_client_info": {
+          "package_name": "com.aistudio.motorwinding.qrxpz"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3HDFZ87MqD-2vZMJwd9oyQoOvrGTj0J4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
