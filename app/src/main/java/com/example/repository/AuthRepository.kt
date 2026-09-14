@@ -47,23 +47,25 @@ class AuthRepository {
             }
         } catch (e: Exception) {
             val errorCode = if (e is FirebaseAuthException) e.errorCode else "UNKNOWN"
-            Log.e("AuthDebug", "Firebase auth failed with Error Code: $errorCode, Exception: ${e.message}")
             if (errorCode == "ERROR_INVALID_CREDENTIAL" || errorCode == "INVALID_LOGIN_CREDENTIALS") {
-                Result.failure(Exception("Invalid email or password. Please try again."))
+                Log.d("AuthDebug", "Login failed: Invalid email or password.")
+                Result.failure(Exception("Invalid email or password. Please verify your credentials and try again."))
             } else {
+                Log.e("AuthDebug", "Firebase auth failed with Error Code: $errorCode, Exception: ${e.message}")
                 Result.failure(e)
             }
         }
     }
 
     suspend fun registerPublicUser(name: String, email: String, mobile: String, pass: String): Result<User> {
+        val trimmedEmail = email.trim()
         return try {
-            val res = auth.createUserWithEmailAndPassword(email, pass).await()
+            val res = auth.createUserWithEmailAndPassword(trimmedEmail, pass).await()
             val uid = res.user?.uid ?: throw Exception("User ID not found")
             val user = User(
                 id = uid,
                 name = name,
-                email = email,
+                email = trimmedEmail,
                 mobile = mobile,
                 role = "public",
                 accountStatus = "pending"
