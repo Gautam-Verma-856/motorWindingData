@@ -82,7 +82,7 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
                     forceUpdate = forceUpdate
                 )
 
-                Toast.makeText(context, "Update check: current=$currentVersionCode, latest=$latestVersionCode", Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(context, "Update check: current=$currentVersionCode, latest=$latestVersionCode", android.widget.Toast.LENGTH_LONG).show()
 
                 if (currentVersionCode < config.latestVersionCode) {
                     updateConfig = config
@@ -90,9 +90,11 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
                 }
             } else {
                 android.util.Log.d("AppUpdateChecker", "Update config document does not exist")
+                android.widget.Toast.makeText(context, "Update check: document does not exist", android.widget.Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             android.util.Log.e("AppUpdateChecker", "Firebase update check failed", e)
+            android.widget.Toast.makeText(context, "Update check failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 

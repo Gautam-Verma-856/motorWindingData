@@ -30,7 +30,11 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    if (FirebaseApp.getApps(this).isEmpty()) {
+                    val firebaseApps = FirebaseApp.getApps(this)
+                    android.util.Log.d("MainActivity", "Firebase apps count: ${firebaseApps.size}")
+                    if (firebaseApps.isEmpty()) {
+                        android.util.Log.e("MainActivity", "Firebase is not initialized!")
+                        android.widget.Toast.makeText(this, "Firebase is NOT initialized!", android.widget.Toast.LENGTH_LONG).show()
                         Column(
                             modifier = Modifier.fillMaxSize().padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -49,6 +53,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     } else {
+                        android.util.Log.d("MainActivity", "Firebase is initialized. Rendering AppUpdateWrapper.")
+                        android.widget.Toast.makeText(this, "Firebase OK. Starting AppUpdateWrapper.", android.widget.Toast.LENGTH_SHORT).show()
                         AppUpdateWrapper {
                             NavGraph()
                         }
