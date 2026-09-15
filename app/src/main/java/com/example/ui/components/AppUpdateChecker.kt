@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.BuildConfig
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 
@@ -40,16 +41,37 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
     val currentVersionCode = BuildConfig.VERSION_CODE
 
     LaunchedEffect(Unit) {
+        android.util.Log.d("AppUpdateChecker", "Starting update check")
         try {
             val db = FirebaseFirestore.getInstance()
             val snapshot = db.collection("app_config").document("update").get().await()
+            
+            val projectId = com.google.firebase.FirebaseApp.getInstance().options.projectId
+            android.util.Log.d("AppUpdateChecker", "snapshot.exists(): ${snapshot.exists()}")
+            android.util.Log.d("AppUpdateChecker", "Firebase project ID: $projectId")
+            android.util.Log.d("AppUpdateChecker", "currentVersionCode: $currentVersionCode")
+            
             if (snapshot.exists()) {
-                val latestVersionCode = snapshot.get("latestVersionCode")?.toString()?.toIntOrNull() ?: 0
-                val latestVersionName = snapshot.getString("latestVersionName") ?: ""
-                val minimumSupportedVersionCode = snapshot.get("minimumSupportedVersionCode")?.toString()?.toIntOrNull() ?: 0
-                val updateMessage = snapshot.getString("updateMessage") ?: "A new version of the app is available."
-                val updateUrl = snapshot.getString("updateUrl") ?: ""
-                val forceUpdate = snapshot.get("forceUpdate")?.toString()?.toBoolean() ?: false
+                val rawLatestVersionCode = snapshot.get("latestVersionCode")
+                val rawLatestVersionName = snapshot.get("latestVersionName")
+                val rawMinimumSupportedVersionCode = snapshot.get("minimumSupportedVersionCode")
+                val rawUpdateMessage = snapshot.get("updateMessage")
+                val rawUpdateUrl = snapshot.get("updateUrl")
+                val rawForceUpdate = snapshot.get("forceUpdate")
+                
+                android.util.Log.d("AppUpdateChecker", "latestVersionCode value: $rawLatestVersionCode, type: ${rawLatestVersionCode?.javaClass?.name}")
+                android.util.Log.d("AppUpdateChecker", "latestVersionName value: $rawLatestVersionName, type: ${rawLatestVersionName?.javaClass?.name}")
+                android.util.Log.d("AppUpdateChecker", "minimumSupportedVersionCode value: $rawMinimumSupportedVersionCode, type: ${rawMinimumSupportedVersionCode?.javaClass?.name}")
+                android.util.Log.d("AppUpdateChecker", "updateMessage value: $rawUpdateMessage, type: ${rawUpdateMessage?.javaClass?.name}")
+                android.util.Log.d("AppUpdateChecker", "updateUrl value: $rawUpdateUrl, type: ${rawUpdateUrl?.javaClass?.name}")
+                android.util.Log.d("AppUpdateChecker", "forceUpdate value: $rawForceUpdate, type: ${rawForceUpdate?.javaClass?.name}")
+
+                val latestVersionCode = rawLatestVersionCode?.toString()?.toDoubleOrNull()?.toInt() ?: 0
+                val latestVersionName = rawLatestVersionName?.toString() ?: ""
+                val minimumSupportedVersionCode = rawMinimumSupportedVersionCode?.toString()?.toDoubleOrNull()?.toInt() ?: 0
+                val updateMessage = rawUpdateMessage?.toString() ?: "A new version of the app is available."
+                val updateUrl = rawUpdateUrl?.toString() ?: ""
+                val forceUpdate = rawForceUpdate?.toString()?.toBooleanStrictOrNull() ?: rawForceUpdate?.toString()?.toBoolean() ?: false
 
                 val config = UpdateConfig(
                     latestVersionCode = latestVersionCode,
@@ -60,13 +82,17 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
                     forceUpdate = forceUpdate
                 )
 
+                Toast.makeText(context, "Update check: current=$currentVersionCode, latest=$latestVersionCode", Toast.LENGTH_LONG).show()
+
                 if (currentVersionCode < config.latestVersionCode) {
                     updateConfig = config
                     showDialog = true
                 }
+            } else {
+                android.util.Log.d("AppUpdateChecker", "Update config document does not exist")
             }
         } catch (e: Exception) {
-            // Silently ignore errors (e.g., no network) to avoid breaking the app
+            android.util.Log.e("AppUpdateChecker", "Firebase update check failed", e)
         }
     }
 
