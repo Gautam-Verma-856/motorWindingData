@@ -3,12 +3,18 @@ package com.example.ui.components
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import com.example.utils.ApkDownloader
+import com.example.utils.DownloadState
+import java.util.Locale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -98,6 +104,10 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
         }
     }
 
+    val coroutineScope = rememberCoroutineScope()
+    var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
+    val apkDownloader = remember { ApkDownloader(context) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         content()
         
@@ -108,17 +118,26 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
             AppUpdateDialog(
                 config = config,
                 isMandatory = isMandatory,
-                onDismiss = { if (!isMandatory) showDialog = false },
+                downloadState = downloadState,
+                onDismiss = { if (!isMandatory && downloadState !is DownloadState.Downloading) showDialog = false },
                 onUpdate = {
                     if (config.updateUrl.isNotBlank()) {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(config.updateUrl))
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Could not open update link", Toast.LENGTH_SHORT).show()
+                        coroutineScope.launch {
+                            apkDownloader.downloadApk(config.updateUrl, "motor_winding_update_${config.latestVersionName}.apk")
+                                .collect { state ->
+                                    downloadState = state
+                                    if (state is DownloadState.Success) {
+                                        apkDownloader.installApk(state.file)
+                                    }
+                                }
                         }
                     } else {
                         Toast.makeText(context, "Update URL is not available", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onInstall = {
+                    if (downloadState is DownloadState.Success) {
+                        apkDownloader.installApk((downloadState as DownloadState.Success).file)
                     }
                 }
             )
@@ -130,14 +149,17 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
 fun AppUpdateDialog(
     config: UpdateConfig,
     isMandatory: Boolean,
+    downloadState: DownloadState,
     onDismiss: () -> Unit,
-    onUpdate: () -> Unit
+    onUpdate: () -> Unit,
+    onInstall: () -> Unit
 ) {
+    val isDownloading = downloadState is DownloadState.Downloading || downloadState is DownloadState.Progress
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
-            dismissOnBackPress = !isMandatory,
-            dismissOnClickOutside = !isMandatory
+            dismissOnBackPress = !isMandatory && !isDownloading,
+            dismissOnClickOutside = !isMandatory && !isDownloading
         )
     ) {
         Surface(
@@ -157,18 +179,32 @@ fun AppUpdateDialog(
                         .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SystemUpdate,
-                        contentDescription = "Update Available",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(32.dp)
-                    )
+                    if (downloadState is DownloadState.Success) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircle,
+                            contentDescription = "Update Ready",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.SystemUpdate,
+                            contentDescription = "Update Available",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
                 Text(
-                    text = if (isMandatory) "Mandatory Update" else "Update Available",
+                    text = when (downloadState) {
+                        is DownloadState.Downloading, is DownloadState.Progress -> "Downloading Update..."
+                        is DownloadState.Success -> "Ready to Install"
+                        is DownloadState.Error -> "Download Failed"
+                        else -> if (isMandatory) "Mandatory Update" else "Update Available"
+                    },
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -177,49 +213,80 @@ fun AppUpdateDialog(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                Text(
-                    text = config.updateMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer
-                ) {
+                if (downloadState is DownloadState.Idle || downloadState is DownloadState.Error) {
                     Text(
-                        text = "Version ${config.latestVersionName}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        fontWeight = FontWeight.SemiBold
+                        text = if (downloadState is DownloadState.Error) downloadState.message else config.updateMessage,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (downloadState is DownloadState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
                     )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = "Version ${config.latestVersionName}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                
+                if (isDownloading) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    val progress = if (downloadState is DownloadState.Progress) downloadState.progress.toFloat() / 100f else 0f
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (downloadState is DownloadState.Progress) {
+                        Text(
+                            text = String.format(Locale.US, "%.1f MB / %.1f MB (%d%%)", downloadState.downloadedMb, downloadState.totalMb, downloadState.progress),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                Button(
-                    onClick = onUpdate,
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text("Update Now", fontWeight = FontWeight.Bold)
-                }
-                
-                if (!isMandatory) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    TextButton(
-                        onClick = onDismiss,
+                if (downloadState is DownloadState.Success) {
+                    Button(
+                        onClick = onInstall,
                         modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("Later", fontWeight = FontWeight.Bold)
+                        Text("Install Update", fontWeight = FontWeight.Bold)
+                    }
+                } else if (!isDownloading) {
+                    Button(
+                        onClick = onUpdate,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text(if (downloadState is DownloadState.Error) "Retry Download" else "Update Now", fontWeight = FontWeight.Bold)
+                    }
+                    
+                    if (!isMandatory) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TextButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Later", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
