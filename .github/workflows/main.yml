@@ -74,12 +74,13 @@ jobs:
           fi
           npm install firebase-admin
           node -e "
-          const admin = require('firebase-admin');
+          const { initializeApp, cert } = require('firebase-admin/app');
+          const { getFirestore } = require('firebase-admin/firestore');
           const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-          admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
+          initializeApp({
+            credential: cert(serviceAccount)
           });
-          const db = admin.firestore();
+          const db = getFirestore();
           const updateUrl = \`https://github.com/\${process.env.GITHUB_REPOSITORY}/releases/download/\${process.env.TAG_NAME}/app-debug.apk\`;
           db.doc('app_config/update').set({
             latestVersionCode: parseInt(process.env.VERSION_CODE, 10),
