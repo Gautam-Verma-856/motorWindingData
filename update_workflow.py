@@ -1,4 +1,4 @@
-name: Build APK
+content = """name: Build APK
 
 on:
   push:
@@ -62,3 +62,8 @@ jobs:
           name: App Version ${{ env.VERSION_NAME }}
           files: app/build/outputs/apk/debug/app-debug.apk
           generate_release_notes: true
+"""
+
+with open(".github/workflows/main.yml", "w") as f:
+    f.write(content)
+print("Workflow updated.")

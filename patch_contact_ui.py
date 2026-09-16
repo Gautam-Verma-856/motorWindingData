@@ -1,4 +1,6 @@
-package com.example.ui.screens
+import sys
+
+new_content = """package com.example.ui.screens
 
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -112,7 +114,7 @@ val WhatsAppIcon: ImageVector
             curveTo(21.587f, 6.233f, 17.107f, 1.753f, 11.583f, 1.753f)
             close()
         }
-    }.build()
+    }
 
 val InstagramIcon: ImageVector
     get() = ImageVector.Builder(
@@ -194,7 +196,7 @@ val InstagramIcon: ImageVector
             curveTo(16.967f, 6.39f, 17.611f, 7.034f, 18.406f, 7.034f)
             close()
         }
-    }.build()
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -534,3 +536,8 @@ private fun openDialer(context: Context, phone: String) {
         Toast.makeText(context, "Could not open dialer", Toast.LENGTH_SHORT).show()
     }
 }
+"""
+
+with open("app/src/main/java/com/example/ui/screens/ContactScreen.kt", "w") as f:
+    f.write(new_content)
+print("Updated successfully")

@@ -15,8 +15,12 @@ android {
     applicationId = "com.aistudio.motorwinding.qrxpz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "3.0"
+    val githubRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+    val calcVersionCode = if (githubRunNumber != null) githubRunNumber + 3 else 3
+    val calcVersionName = "${calcVersionCode}.0"
+
+    versionCode = calcVersionCode
+    versionName = calcVersionName
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
