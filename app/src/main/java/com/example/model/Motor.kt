@@ -2,7 +2,8 @@ package com.example.model
 
 data class SinglePhaseMotor(
     val id: String = "",
-    val photoUrl: String = "",
+    val photoUrl: String = "", // Kept for backward compatibility
+    val photoUrls: List<String> = emptyList(),
     val companyName: String = "",
     val hp: String = "",
     val capacitor: String = "",
@@ -21,7 +22,8 @@ data class SinglePhaseMotor(
 
 data class ThreePhaseMotor(
     val id: String = "",
-    val photoUrl: String = "",
+    val photoUrl: String = "", // Kept for backward compatibility
+    val photoUrls: List<String> = emptyList(),
     val name: String = "",
     val slot: String = "",
     val hp: String = "",

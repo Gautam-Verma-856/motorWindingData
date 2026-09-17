@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.*
@@ -51,6 +52,7 @@ fun AddEditMotorScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    var existingPhotoUrls by remember { mutableStateOf<List<String>>(emptyList()) }
     var photoUrl by remember { mutableStateOf("") }
     var companyName by remember { mutableStateOf("") }
     var hp by remember { mutableStateOf("") }
@@ -70,14 +72,17 @@ fun AddEditMotorScreen(
     var swg by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
     
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var isUploading by remember { mutableStateOf(false) }
+    var uploadProgress by remember { mutableStateOf(0) }
+    var totalUploads by remember { mutableStateOf(0) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            selectedImageUri = uri
+        contract = ActivityResultContracts.PickMultipleVisualMedia(6)
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            selectedImageUris = uris
+            existingPhotoUrls = emptyList() // clear existing when picking new
         }
     }
 
@@ -86,6 +91,7 @@ fun AddEditMotorScreen(
             if (type == "single") {
                 val motor = singlePhaseMotors.find { it.id == id }
                 if (motor != null) {
+                    existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
                     photoUrl = motor.photoUrl
                     companyName = motor.companyName
                     hp = motor.hp
@@ -102,6 +108,7 @@ fun AddEditMotorScreen(
             } else {
                 val motor = threePhaseMotors.find { it.id == id }
                 if (motor != null) {
+                    existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
                     photoUrl = motor.photoUrl
                     companyName = motor.name
                     slot = motor.slot
@@ -121,7 +128,7 @@ fun AddEditMotorScreen(
     if (uiState is UiState.Loading) {
         LoadingDialog("Saving Motor Data...")
     } else if (isUploading) {
-        LoadingDialog("Uploading Photo...")
+        LoadingDialog(if (totalUploads > 1) "Uploading Photos ($uploadProgress/$totalUploads)..." else "Uploading Photo...")
     } else if (uiState is UiState.Success) {
         val currentUser = authViewModel.currentUser.value
         val isPublic = currentUser?.role == "public"
@@ -178,20 +185,18 @@ fun AddEditMotorScreen(
                 elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (selectedImageUri != null) {
-                        AsyncImage(
-                            model = selectedImageUri,
-                            contentDescription = "Selected Photo",
-                            modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(16.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else if (photoUrl.isNotEmpty()) {
-                        AsyncImage(
-                            model = photoUrl,
-                            contentDescription = "Motor Photo",
-                            modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(16.dp)),
-                            contentScale = ContentScale.Crop
-                        )
+                    val displayUrls = if (selectedImageUris.isNotEmpty()) selectedImageUris else existingPhotoUrls
+                    if (displayUrls.isNotEmpty()) {
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            displayUrls.forEach { url ->
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = "Motor Photo",
+                                    modifier = Modifier.size(200.dp).clip(RoundedCornerShape(16.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
                     } else {
                         Box(
                             modifier = Modifier.fillMaxWidth().height(120.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)),
@@ -209,7 +214,7 @@ fun AddEditMotorScreen(
                     ) {
                         Icon(Icons.Rounded.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (photoUrl.isEmpty() && selectedImageUri == null) "Upload Photo" else "Replace Photo", fontWeight = FontWeight.Bold)
+                        Text(if (displayUrls.isEmpty()) "Upload Photos (Max 6)" else "Replace Photos", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -262,21 +267,32 @@ fun AddEditMotorScreen(
                     val actualId = if (id == "new") "" else id ?: ""
 
                     coroutineScope.launch {
-                        var finalPhotoUrl = photoUrl
-                        if (selectedImageUri != null) {
-                            val uploaded = motorViewModel.uploadPhoto(selectedImageUri!!)
-                            if (uploaded != null) {
-                                finalPhotoUrl = uploaded
-                            } else {
-                                Toast.makeText(context, "Photo upload failed. Proceeding without photo.", Toast.LENGTH_SHORT).show()
+                        var finalPhotoUrls = existingPhotoUrls
+                        if (selectedImageUris.isNotEmpty()) {
+                            val newUrls = mutableListOf<String>()
+                            totalUploads = selectedImageUris.size
+                            uploadProgress = 0
+                            for (uri in selectedImageUris) {
+                                val uploadResult = motorViewModel.uploadPhoto(context, uri)
+                                if (uploadResult.isSuccess) {
+                                    newUrls.add(uploadResult.getOrNull() ?: "")
+                                    uploadProgress++
+                                } else {
+                                    isUploading = false
+                                    val errorMsg = uploadResult.exceptionOrNull()?.message ?: "Unknown error"
+                                    Toast.makeText(context, "Photo upload failed: $errorMsg", Toast.LENGTH_LONG).show()
+                                    return@launch
+                                }
                             }
+                            finalPhotoUrls = newUrls
                         }
                         isUploading = false
                         
                         if (type == "single") {
                             val motor = SinglePhaseMotor(
                                 id = actualId,
-                                photoUrl = finalPhotoUrl,
+                                photoUrl = finalPhotoUrls.firstOrNull() ?: photoUrl,
+                                photoUrls = finalPhotoUrls,
                                 companyName = companyName,
                                 hp = hp,
                                 capacitor = capacitor,
@@ -295,7 +311,8 @@ fun AddEditMotorScreen(
                         } else {
                             val motor = ThreePhaseMotor(
                                 id = actualId,
-                                photoUrl = finalPhotoUrl,
+                                photoUrl = finalPhotoUrls.firstOrNull() ?: photoUrl,
+                                photoUrls = finalPhotoUrls,
                                 name = companyName,
                                 slot = slot,
                                 hp = hp,

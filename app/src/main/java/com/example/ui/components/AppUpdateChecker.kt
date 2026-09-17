@@ -113,7 +113,8 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
         
         if (showDialog && updateConfig != null) {
             val config = updateConfig!!
-            val isMandatory = currentVersionCode < config.minimumSupportedVersionCode || config.forceUpdate
+            // Update is always optional, ignoring minimumSupportedVersionCode and forceUpdate
+            val isMandatory = false
             
             AppUpdateDialog(
                 config = config,

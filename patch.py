@@ -1,103 +1,250 @@
 import re
 
-with open("app/src/main/java/com/example/ui/screens/AddEditMotorScreen.kt", "r") as f:
+with open('app/src/main/java/com/example/ui/screens/AddEditMotorScreen.kt', 'r') as f:
     content = f.read()
 
-# 1. Add imports
-imports = """
-import com.example.ui.components.LoadingDialog
-import com.example.ui.components.SuccessAnimationDialog
-import com.example.ui.components.ErrorDialog
-"""
-if "com.example.ui.components.LoadingDialog" not in content:
-    content = content.replace("import kotlinx.coroutines.launch\n", "import kotlinx.coroutines.launch\n" + imports)
+# Imports
+if 'import androidx.compose.foundation.horizontalScroll' not in content:
+    content = content.replace('import androidx.compose.foundation.verticalScroll', 'import androidx.compose.foundation.verticalScroll\nimport androidx.compose.foundation.horizontalScroll')
 
-# 2. Remove Toast logic in LaunchedEffect(uiState)
-old_launched_effect = """    LaunchedEffect(uiState) {
-        if (uiState is UiState.Success) {
-            Toast.makeText(context, "Motor data saved successfully.", Toast.LENGTH_SHORT).show()
-            motorViewModel.resetUiState()
-            navController.navigateUp()
-        } else if (uiState is UiState.Error) {
-            Toast.makeText(context, (uiState as UiState.Error).message, Toast.LENGTH_SHORT).show()
-            motorViewModel.resetUiState()
+# photoUrl -> existingPhotoUrls
+content = content.replace('var photoUrl by remember { mutableStateOf("") }', 
+'''var existingPhotoUrls by remember { mutableStateOf<List<String>>(emptyList()) }
+    var photoUrl by remember { mutableStateOf("") }''')
+
+# selectedImageUri -> selectedImageUris
+content = content.replace(
+'''    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var isUploading by remember { mutableStateOf(false) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            selectedImageUri = uri
         }
-    }"""
-new_launched_effect = """    // State dialogs handled in Compose UI tree"""
-content = content.replace(old_launched_effect, new_launched_effect)
+    }''',
+'''    var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var isUploading by remember { mutableStateOf(false) }
+    var uploadProgress by remember { mutableStateOf(0) }
+    var totalUploads by remember { mutableStateOf(0) }
 
-# 3. Add Dialogs inside Scaffold
-dialogs = """
-    if (uiState is UiState.Loading) {
-        LoadingDialog("Saving Motor Data...")
-    } else if (isUploading) {
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(6)
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            selectedImageUris = uris
+            existingPhotoUrls = emptyList() // clear existing when picking new
+        }
+    }''')
+
+# LaunchedEffect Single
+content = content.replace(
+'''                val motor = singlePhaseMotors.find { it.id == id }
+                if (motor != null) {
+                    photoUrl = motor.photoUrl''',
+'''                val motor = singlePhaseMotors.find { it.id == id }
+                if (motor != null) {
+                    existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
+                    photoUrl = motor.photoUrl''')
+
+# LaunchedEffect ThreePhase
+content = content.replace(
+'''                val motor = threePhaseMotors.find { it.id == id }
+                if (motor != null) {
+                    photoUrl = motor.photoUrl''',
+'''                val motor = threePhaseMotors.find { it.id == id }
+                if (motor != null) {
+                    existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
+                    photoUrl = motor.photoUrl''')
+
+# LoadingDialog
+content = content.replace(
+'''    } else if (isUploading) {
         LoadingDialog("Uploading Photo...")
-    } else if (uiState is UiState.Success) {
-        val currentUser = authViewModel.currentUser.value
-        val isPublic = currentUser?.role == "public"
-        val title = if (isPublic) "Submitted Successfully!" else "Motor Data Saved Successfully"
-        val msg = if (isPublic) "Your motor data has been sent for Admin approval." else ""
-        SuccessAnimationDialog(
-            title = title,
-            message = msg,
-            onDismiss = {
-                motorViewModel.resetUiState()
-                navController.navigateUp()
-            }
-        )
-    } else if (uiState is UiState.Error) {
-        ErrorDialog(
-            message = (uiState as UiState.Error).message,
-            onDismiss = { motorViewModel.resetUiState() }
-        )
-    }
-"""
+    } else if (uiState is UiState.Success) {''',
+'''    } else if (isUploading) {
+        LoadingDialog(if (totalUploads > 1) "Uploading Photos ($uploadProgress/$totalUploads)..." else "Uploading Photo...")
+    } else if (uiState is UiState.Success) {''')
 
-if "LoadingDialog" not in content.split("Scaffold(")[1]:
-    content = content.replace("    Scaffold(", dialogs + "\    Scaffold(")
-
-# 4. Modify Button area to remove CircularProgressIndicator and disable buttons
-old_button_area = """            if (uiState is UiState.Loading || isUploading) {
-                CircularProgressIndicator()
-            } else {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    OutlinedButton(onClick = { navController.navigateUp() }, modifier = Modifier.weight(1f)) {
-                        Text("Cancel")
+# Photo Section UI
+content = content.replace(
+'''                    if (selectedImageUri != null) {
+                        AsyncImage(
+                            model = selectedImageUri,
+                            contentDescription = "Selected Photo",
+                            modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(16.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else if (photoUrl.isNotEmpty()) {
+                        AsyncImage(
+                            model = photoUrl,
+                            contentDescription = "Motor Photo",
+                            modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(16.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(120.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.PhotoCamera, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                    Button("""
-
-new_button_area = """            // Button area
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(
-                    onClick = { navController.navigateUp() }, 
-                    modifier = Modifier.weight(1f),
-                    enabled = uiState !is UiState.Loading && !isUploading
-                ) {
-                    Text("Cancel")
-                }
-                Button(
-                    enabled = uiState !is UiState.Loading && !isUploading,"""
-
-content = content.replace(old_button_area, new_button_area)
-
-# Also remove the ending braces for the old 'else' block around buttons
-old_button_end = """                    ) {
-                        Text("Save Motor")
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Button(
+                        onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                    ) {
+                        Icon(Icons.Rounded.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (photoUrl.isEmpty() && selectedImageUri == null) "Upload Photo" else "Replace Photo", fontWeight = FontWeight.Bold)
+                    }''',
+'''                    val displayUrls = if (selectedImageUris.isNotEmpty()) selectedImageUris else existingPhotoUrls
+                    if (displayUrls.isNotEmpty()) {
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            displayUrls.forEach { url ->
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = "Motor Photo",
+                                    modifier = Modifier.size(200.dp).clip(RoundedCornerShape(16.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(120.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Rounded.PhotoCamera, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                }
-            }
-        }
-    }
-}"""
-new_button_end = """                    ) {
-                        Text("Save Motor")
-                    }
-                }
-        }
-    }
-}"""
-content = content.replace(old_button_end, new_button_end)
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Button(
+                        onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                    ) {
+                        Icon(Icons.Rounded.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (displayUrls.isEmpty()) "Upload Photos (Max 6)" else "Replace Photos", fontWeight = FontWeight.Bold)
+                    }''')
 
 
-with open("app/src/main/java/com/example/ui/screens/AddEditMotorScreen.kt", "w") as f:
+# Upload Logic
+content = content.replace(
+'''                        var finalPhotoUrl = photoUrl
+                        if (selectedImageUri != null) {
+                            val uploadResult = motorViewModel.uploadPhoto(context, selectedImageUri!!)
+                            if (uploadResult.isSuccess) {
+                                finalPhotoUrl = uploadResult.getOrNull() ?: ""
+                            } else {
+                                isUploading = false
+                                val errorMsg = uploadResult.exceptionOrNull()?.message ?: "Unknown error"
+                                Toast.makeText(context, "Photo upload failed: $errorMsg", Toast.LENGTH_LONG).show()
+                                return@launch
+                            }
+                        }
+                        isUploading = false
+                        
+                        if (type == "single") {
+                            val motor = SinglePhaseMotor(
+                                id = actualId,
+                                photoUrl = finalPhotoUrl,
+                                companyName = companyName,
+                                hp = hp,
+                                capacitor = capacitor,
+                                runningPitch = runningPitch,
+                                runningTurn = runningTurn,
+                                runningSwg = runningSwg,
+                                runningWeight = runningWeight,
+                                startingPitch = startingPitch,
+                                startingTurn = startingTurn,
+                                startingSwg = startingSwg,
+                                startingWeight = startingWeight,
+                                status = finalStatus,
+                                createdBy = finalCreatedBy
+                            )
+                            motorViewModel.saveSinglePhase(motor)
+                        } else {
+                            val motor = ThreePhaseMotor(
+                                id = actualId,
+                                photoUrl = finalPhotoUrl,
+                                name = companyName,
+                                slot = slot,
+                                hp = hp,
+                                pitch = pitch,
+                                turn = turn,
+                                swg = swg,
+                                weight = weight,
+                                status = finalStatus,
+                                createdBy = finalCreatedBy
+                            )
+                            motorViewModel.saveThreePhase(motor)
+                        }''',
+'''                        var finalPhotoUrls = existingPhotoUrls
+                        if (selectedImageUris.isNotEmpty()) {
+                            val newUrls = mutableListOf<String>()
+                            totalUploads = selectedImageUris.size
+                            uploadProgress = 0
+                            for (uri in selectedImageUris) {
+                                val uploadResult = motorViewModel.uploadPhoto(context, uri)
+                                if (uploadResult.isSuccess) {
+                                    newUrls.add(uploadResult.getOrNull() ?: "")
+                                    uploadProgress++
+                                } else {
+                                    isUploading = false
+                                    val errorMsg = uploadResult.exceptionOrNull()?.message ?: "Unknown error"
+                                    Toast.makeText(context, "Photo upload failed: $errorMsg", Toast.LENGTH_LONG).show()
+                                    return@launch
+                                }
+                            }
+                            finalPhotoUrls = newUrls
+                        }
+                        isUploading = false
+                        
+                        if (type == "single") {
+                            val motor = SinglePhaseMotor(
+                                id = actualId,
+                                photoUrl = finalPhotoUrls.firstOrNull() ?: photoUrl,
+                                photoUrls = finalPhotoUrls,
+                                companyName = companyName,
+                                hp = hp,
+                                capacitor = capacitor,
+                                runningPitch = runningPitch,
+                                runningTurn = runningTurn,
+                                runningSwg = runningSwg,
+                                runningWeight = runningWeight,
+                                startingPitch = startingPitch,
+                                startingTurn = startingTurn,
+                                startingSwg = startingSwg,
+                                startingWeight = startingWeight,
+                                status = finalStatus,
+                                createdBy = finalCreatedBy
+                            )
+                            motorViewModel.saveSinglePhase(motor)
+                        } else {
+                            val motor = ThreePhaseMotor(
+                                id = actualId,
+                                photoUrl = finalPhotoUrls.firstOrNull() ?: photoUrl,
+                                photoUrls = finalPhotoUrls,
+                                name = companyName,
+                                slot = slot,
+                                hp = hp,
+                                pitch = pitch,
+                                turn = turn,
+                                swg = swg,
+                                weight = weight,
+                                status = finalStatus,
+                                createdBy = finalCreatedBy
+                            )
+                            motorViewModel.saveThreePhase(motor)
+                        }''')
+
+with open('app/src/main/java/com/example/ui/screens/AddEditMotorScreen.kt', 'w') as f:
     f.write(content)
+

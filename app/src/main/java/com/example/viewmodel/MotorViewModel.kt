@@ -1,5 +1,6 @@
 package com.example.viewmodel
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -39,8 +40,8 @@ class MotorViewModel : ViewModel() {
         }
     }
     
-    suspend fun uploadPhoto(uri: Uri): String? {
-        return repo.uploadImage(uri).getOrNull()
+    suspend fun uploadPhoto(context: Context, uri: Uri): Result<String> {
+        return repo.uploadImage(context, uri)
     }
     
     fun saveSinglePhase(motor: SinglePhaseMotor) {

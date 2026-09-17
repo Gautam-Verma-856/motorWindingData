@@ -6,6 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Info
@@ -83,16 +84,21 @@ fun MotorDetailScreen(
             if (type == "single") {
                 val motor = singlePhaseMotors.find { it.id == id }
                 if (motor != null) {
-                    if (motor.photoUrl.isNotEmpty()) {
-                        AsyncImage(
-                            model = motor.photoUrl,
-                            contentDescription = "Motor Photo",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(250.dp)
-                                .clip(RoundedCornerShape(24.dp)),
-                            contentScale = ContentScale.Crop
-                        )
+                    val displayUrls = if (motor.photoUrls.isNotEmpty()) motor.photoUrls else if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList()
+                    if (displayUrls.isNotEmpty()) {
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            displayUrls.forEach { url ->
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = "Motor Photo",
+                                    modifier = Modifier
+                                        .height(250.dp)
+                                        .width(if (displayUrls.size == 1) 360.dp else 280.dp)
+                                        .clip(RoundedCornerShape(24.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
                     }
                     
                     DetailSection(title = "Basic Information", icon = Icons.Rounded.Info) {
@@ -129,16 +135,21 @@ fun MotorDetailScreen(
             } else {
                 val motor = threePhaseMotors.find { it.id == id }
                 if (motor != null) {
-                    if (motor.photoUrl.isNotEmpty()) {
-                        AsyncImage(
-                            model = motor.photoUrl,
-                            contentDescription = "Motor Photo",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(250.dp)
-                                .clip(RoundedCornerShape(24.dp)),
-                            contentScale = ContentScale.Crop
-                        )
+                    val displayUrls = if (motor.photoUrls.isNotEmpty()) motor.photoUrls else if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList()
+                    if (displayUrls.isNotEmpty()) {
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            displayUrls.forEach { url ->
+                                AsyncImage(
+                                    model = url,
+                                    contentDescription = "Motor Photo",
+                                    modifier = Modifier
+                                        .height(250.dp)
+                                        .width(if (displayUrls.size == 1) 360.dp else 280.dp)
+                                        .clip(RoundedCornerShape(24.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
                     }
                     
                     DetailSection(title = "Basic Information", icon = Icons.Rounded.Info) {
