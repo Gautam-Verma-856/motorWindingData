@@ -64,8 +64,11 @@ class MotorRepository {
                     )
                     .build()
                     
+                val requestUrl = "https://api.imgbb.com/1/upload"
+                android.util.Log.d("ImgBBUpload", "Actual HTTP request URL: $requestUrl")
+                
                 val request = Request.Builder()
-                    .url("https://api.imgbb.com/1/upload")
+                    .url(requestUrl)
                     .post(requestBody)
                     .build()
                     
