@@ -64,8 +64,11 @@ fun CustomMotorListScreen(
     var fullScreenPhotos by remember { mutableStateOf<List<String>?>(null) }
     var fullScreenInitialIndex by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        motorViewModel.loadData()
+    val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    val targetUserId = currentUser?.id?.ifBlank { authUid } ?: authUid
+
+    LaunchedEffect(categoryId, role, targetUserId) {
+        motorViewModel.loadData(isAdmin = (role == "admin"), userId = targetUserId)
     }
 
     if (uiState is UiState.Loading) {
@@ -179,6 +182,11 @@ fun CustomMotorListScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        motorViewModel.loadData(isAdmin = (role == "admin"), userId = targetUserId)
+                    }) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Data")
+                    }
                     if (role == "admin") {
                         IconButton(onClick = { navController.navigate("manage_custom_categories") }) {
                             Icon(Icons.Rounded.Tune, contentDescription = "Configure Category", tint = MaterialTheme.colorScheme.primary)
@@ -465,6 +473,16 @@ fun CustomMotorCard(
                 }
             }
 
+            if (motor.createdAt > 0L) {
+                val dateStr = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(motor.createdAt))
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Submitted: $dateStr", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
             // ACTION BUTTONS
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -476,7 +494,7 @@ fun CustomMotorCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Admin Approve/Reject buttons if pending
-                if (role == "admin" && motor.status == "pending") {
+                if (role == "admin" && motor.isPending()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilledTonalButton(
                             onClick = onApprove,
@@ -498,6 +516,17 @@ fun CustomMotorCard(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Reject", style = MaterialTheme.typography.labelSmall)
                         }
+                    }
+                } else if (role == "admin" && motor.isRejected()) {
+                    FilledTonalButton(
+                        onClick = onApprove,
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFF10B981).copy(alpha = 0.2f), contentColor = Color(0xFF047857)),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Re-Approve", style = MaterialTheme.typography.labelSmall)
                     }
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))

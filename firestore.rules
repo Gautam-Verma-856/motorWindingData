@@ -59,7 +59,11 @@ service cloud.firestore {
       allow read: if isAdmin()
         || (
           request.auth != null
-          && resource.data.status == "approved"
+          && (
+            resource.data.status == "approved"
+            || resource.data.status == "APPROVED"
+            || resource.data.status == "Approved"
+          )
         )
         || (
           request.auth != null
@@ -81,7 +85,11 @@ service cloud.firestore {
       allow read: if isAdmin()
         || (
           request.auth != null
-          && resource.data.status == "approved"
+          && (
+            resource.data.status == "approved"
+            || resource.data.status == "APPROVED"
+            || resource.data.status == "Approved"
+          )
         )
         || (
           request.auth != null
@@ -111,7 +119,11 @@ service cloud.firestore {
       allow read: if isAdmin()
         || (
           request.auth != null
-          && resource.data.status == "approved"
+          && (
+            resource.data.status == "approved"
+            || resource.data.status == "APPROVED"
+            || resource.data.status == "Approved"
+          )
         )
         || (
           request.auth != null

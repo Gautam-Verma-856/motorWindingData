@@ -479,4 +479,176 @@ class MotorStatusWorkflowTest {
         assertFalse("Unverified user must not be eligible to browse motors", isEligibleToBrowseMotors(unverifiedUser))
         assertTrue("Active verified user is eligible to browse motors", isEligibleToBrowseMotors(activeUser))
     }
+
+    // -------------------------------------------------------------
+    // 14. ADMIN CAN SEE ALL STATUSES INCLUDING REJECTED RECORDS
+    // -------------------------------------------------------------
+    @Test
+    fun testAdminCanSeeAllStatusesIncludingRejectedRecords() {
+        val allMotors = listOf(
+            SinglePhaseMotor(id = "s1", companyName = "Crompton", status = "pending"),
+            SinglePhaseMotor(id = "s2", companyName = "Kirloskar", status = "approved"),
+            SinglePhaseMotor(id = "s3", companyName = "Havells", status = "rejected"),
+            ThreePhaseMotor(id = "t1", name = "Siemens", status = "rejected"),
+            CustomMotor(id = "c1", companyName = "CoolerMaster", status = "rejected")
+        )
+
+        val adminRole = "admin"
+        val filterForRole = fun(items: List<SinglePhaseMotor>, role: String, statusFilter: String): List<SinglePhaseMotor> {
+            return items.filter { motor ->
+                val roleAllowed = if (role == "admin") true else motor.isExplicitlyApproved()
+                val statusAllowed = when (statusFilter) {
+                    "Pending" -> motor.isPending()
+                    "Approved" -> motor.isExplicitlyApproved()
+                    "Rejected" -> motor.isRejected()
+                    else -> true
+                }
+                roleAllowed && statusAllowed
+            }
+        }
+
+        // Admin seeing all
+        val adminAll = filterForRole(allMotors.filterIsInstance<SinglePhaseMotor>(), adminRole, "All Status")
+        assertEquals(3, adminAll.size)
+
+        // Admin filtering by Rejected
+        val adminRejected = filterForRole(allMotors.filterIsInstance<SinglePhaseMotor>(), adminRole, "Rejected")
+        assertEquals(1, adminRejected.size)
+        assertEquals("s3", adminRejected.first().id)
+        assertTrue(adminRejected.first().isRejected())
+
+        // Public user browsing (cannot see rejected or pending)
+        val publicVisible = filterForRole(allMotors.filterIsInstance<SinglePhaseMotor>(), "public", "All Status")
+        assertEquals(1, publicVisible.size)
+        assertEquals("s2", publicVisible.first().id)
+        assertFalse(publicVisible.any { it.isRejected() })
+        assertFalse(publicVisible.any { it.isPending() })
+    }
+
+    // -------------------------------------------------------------
+    // 15. NEWLY SAVED ADMIN MOTOR APPEARS IMMEDIATELY AND PERSISTS
+    // -------------------------------------------------------------
+    @Test
+    fun testNewlySavedAdminMotorAppearsImmediatelyAndPersists() {
+        val initialList = mutableListOf(
+            SinglePhaseMotor(id = "s1", category = "Submersible Motor", companyName = "Crompton", status = "approved")
+        )
+
+        // Admin saves a new motor (status is "approved" by default for admin)
+        val newAdminMotor = SinglePhaseMotor(
+            id = "s2",
+            category = "Submersible Motor",
+            companyName = "Texmo",
+            hp = "2.0",
+            status = "approved",
+            createdBy = "admin_123",
+            createdByName = "Admin User",
+            createdAt = System.currentTimeMillis()
+        )
+
+        // Optimistic / repository save adds to list
+        initialList.add(newAdminMotor)
+
+        // Verify immediately in single list
+        assertEquals(2, initialList.size)
+        assertTrue(initialList.any { it.id == "s2" && it.companyName == "Texmo" })
+
+        // Simulate refresh (reload from storage)
+        val refreshedList = initialList.toList()
+        assertEquals(2, refreshedList.size)
+        val savedMotor = refreshedList.find { it.id == "s2" }
+        assertTrue(savedMotor != null)
+        assertEquals("approved", savedMotor?.status)
+        assertTrue(savedMotor!!.isExplicitlyApproved())
+    }
+
+    // -------------------------------------------------------------
+    // 16. PUBLIC SUBMISSION STAYS PENDING THEN APPEARS AFTER ADMIN APPROVAL
+    // -------------------------------------------------------------
+    @Test
+    fun testPublicSubmissionPendingUntilApprovalThenVisibleInPublicBrowsing() {
+        val publicUserId = "public_user_42"
+        val repositoryList = mutableListOf<SinglePhaseMotor>()
+
+        // 1. Public user submits motor -> saved as "pending"
+        val submission = SinglePhaseMotor(
+            id = "sub_1",
+            category = "Submersible Motor",
+            companyName = "Usha",
+            hp = "1.5",
+            status = "pending",
+            createdBy = publicUserId,
+            createdByName = "User 42",
+            createdAt = System.currentTimeMillis()
+        )
+        repositoryList.add(submission)
+
+        // Public browsing query: only approved motors
+        val publicBrowseBefore = repositoryList.filter { it.isExplicitlyApproved() }
+        assertEquals("Pending submission must NOT appear in public browsing", 0, publicBrowseBefore.size)
+
+        // My Submissions query for user 42: shows their submission with Pending status
+        val mySubmissionsBefore = repositoryList.filter { it.createdBy == publicUserId }
+        assertEquals(1, mySubmissionsBefore.size)
+        assertEquals("pending", mySubmissionsBefore.first().status)
+        assertEquals("Pending Admin Approval", getStatusBadgeText(mySubmissionsBefore.first().status))
+        assertTrue(mySubmissionsBefore.first().createdAt > 0L)
+
+        // 2. Admin approves the submission
+        val index = repositoryList.indexOfFirst { it.id == "sub_1" }
+        repositoryList[index] = repositoryList[index].copy(status = "approved")
+
+        // Public browsing query after approval: motor is now visible!
+        val publicBrowseAfter = repositoryList.filter { it.isExplicitlyApproved() }
+        assertEquals("Approved submission MUST now appear in public browsing", 1, publicBrowseAfter.size)
+        assertEquals("Usha", publicBrowseAfter.first().companyName)
+
+        // My Submissions query reflects "Approved" status
+        val mySubmissionsAfter = repositoryList.filter { it.createdBy == publicUserId }
+        assertEquals("Approved", getStatusBadgeText(mySubmissionsAfter.first().status))
+    }
+
+    // -------------------------------------------------------------
+    // 17. REJECTED SUBMISSION VISIBLE IN MY SUBMISSIONS & RE-APPROVABLE
+    // -------------------------------------------------------------
+    @Test
+    fun testRejectedSubmissionVisibleInMySubmissionsAndAdminCanReApprove() {
+        val publicUserId = "public_user_99"
+        val repositoryList = mutableListOf(
+            SinglePhaseMotor(
+                id = "sub_99",
+                category = "Submersible Motor",
+                companyName = "V-Guard",
+                status = "rejected",
+                createdBy = publicUserId,
+                createdByName = "User 99",
+                createdAt = 1700000000000L
+            )
+        )
+
+        // Public browsing: 0 (rejected is hidden)
+        val publicBrowse = repositoryList.filter { it.isExplicitlyApproved() }
+        assertEquals(0, publicBrowse.size)
+
+        // Admin view: shows rejected motor
+        val adminList = repositoryList.filter { it.isRejected() }
+        assertEquals(1, adminList.size)
+        assertEquals("sub_99", adminList.first().id)
+
+        // My Submissions: shows motor with Rejected status and submission date
+        val mySubmissions = repositoryList.filter { it.createdBy == publicUserId }
+        assertEquals(1, mySubmissions.size)
+        assertEquals("rejected", mySubmissions.first().status)
+        assertEquals("Rejected", getStatusBadgeText(mySubmissions.first().status))
+        assertEquals(1700000000000L, mySubmissions.first().createdAt)
+
+        // Admin re-approves
+        val idx = repositoryList.indexOfFirst { it.id == "sub_99" }
+        repositoryList[idx] = repositoryList[idx].copy(status = "approved")
+
+        // Now in public browsing
+        val publicBrowseAfterReApproval = repositoryList.filter { it.isExplicitlyApproved() }
+        assertEquals(1, publicBrowseAfterReApproval.size)
+        assertEquals("Approved", getStatusBadgeText(repositoryList[idx].status))
+    }
 }

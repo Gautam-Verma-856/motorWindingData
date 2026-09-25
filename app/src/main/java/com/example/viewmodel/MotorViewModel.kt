@@ -39,6 +39,9 @@ class MotorViewModel : ViewModel() {
     private val _isLoadingData = MutableStateFlow(false)
     val isLoadingData = _isLoadingData.asStateFlow()
 
+    private var lastIsAdmin: Boolean = false
+    private var lastUserId: String? = null
+
     fun clearData() {
         _singlePhaseMotors.value = emptyList()
         _threePhaseMotors.value = emptyList()
@@ -46,20 +49,26 @@ class MotorViewModel : ViewModel() {
         _customMotors.value = emptyList()
         _uiState.value = UiState.Idle
         _isLoadingData.value = false
+        lastIsAdmin = false
+        lastUserId = null
     }
 
-    fun loadData(isAdmin: Boolean = false) {
+    fun loadData(isAdmin: Boolean = lastIsAdmin, userId: String? = lastUserId) {
         val currentFirebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
         if (currentFirebaseUser == null) {
             clearData()
             return
         }
+        lastIsAdmin = isAdmin
+        val effectiveUid = userId?.ifBlank { currentFirebaseUser.uid } ?: currentFirebaseUser.uid
+        lastUserId = effectiveUid
+
         viewModelScope.launch {
             _isLoadingData.value = true
-            repo.getSinglePhaseMotors().onSuccess { _singlePhaseMotors.value = it }
-            repo.getThreePhaseMotors().onSuccess { _threePhaseMotors.value = it }
+            repo.getSinglePhaseMotors(isAdmin, effectiveUid).onSuccess { _singlePhaseMotors.value = it }
+            repo.getThreePhaseMotors(isAdmin, effectiveUid).onSuccess { _threePhaseMotors.value = it }
             repo.getCustomCategories(isAdmin).onSuccess { _customCategories.value = it }
-            repo.getCustomMotors().onSuccess { _customMotors.value = it }
+            repo.getCustomMotors(isAdmin, effectiveUid).onSuccess { _customMotors.value = it }
             _isLoadingData.value = false
         }
     }
@@ -71,8 +80,16 @@ class MotorViewModel : ViewModel() {
     fun saveSinglePhase(motor: SinglePhaseMotor) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
-            repo.saveSinglePhaseMotor(motor).onSuccess {
-                loadData()
+            repo.saveSinglePhaseMotor(motor).onSuccess { savedMotor ->
+                // Optimistically update list so the new/edited motor appears immediately
+                val currentList = _singlePhaseMotors.value
+                val updatedList = if (currentList.any { it.id == savedMotor.id }) {
+                    currentList.map { if (it.id == savedMotor.id) savedMotor else it }
+                } else {
+                    listOf(savedMotor) + currentList
+                }
+                _singlePhaseMotors.value = updatedList
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("save")
             }.onFailure {
                 _uiState.value = UiState.Error(it.message ?: "Failed to save")
@@ -83,10 +100,12 @@ class MotorViewModel : ViewModel() {
     fun deleteSinglePhase(id: String) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
+            _singlePhaseMotors.value = _singlePhaseMotors.value.filter { it.id != id }
             repo.deleteSinglePhaseMotor(id).onSuccess {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("delete")
             }.onFailure {
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Error(it.message ?: "Failed to delete")
             }
         }
@@ -95,8 +114,15 @@ class MotorViewModel : ViewModel() {
     fun saveThreePhase(motor: ThreePhaseMotor) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
-            repo.saveThreePhaseMotor(motor).onSuccess {
-                loadData()
+            repo.saveThreePhaseMotor(motor).onSuccess { savedMotor ->
+                val currentList = _threePhaseMotors.value
+                val updatedList = if (currentList.any { it.id == savedMotor.id }) {
+                    currentList.map { if (it.id == savedMotor.id) savedMotor else it }
+                } else {
+                    listOf(savedMotor) + currentList
+                }
+                _threePhaseMotors.value = updatedList
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("save")
             }.onFailure {
                 _uiState.value = UiState.Error(it.message ?: "Failed to save")
@@ -107,10 +133,12 @@ class MotorViewModel : ViewModel() {
     fun deleteThreePhase(id: String) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
+            _threePhaseMotors.value = _threePhaseMotors.value.filter { it.id != id }
             repo.deleteThreePhaseMotor(id).onSuccess {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("delete")
             }.onFailure {
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Error(it.message ?: "Failed to delete")
             }
         }
@@ -124,10 +152,10 @@ class MotorViewModel : ViewModel() {
                 if (it.id == id) it.copy(status = status) else it
             }
             repo.updateSinglePhaseStatus(id, status).onSuccess {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Error(it.message ?: "Failed to update status")
             }
         }
@@ -141,10 +169,10 @@ class MotorViewModel : ViewModel() {
                 if (it.id == id) it.copy(status = status) else it
             }
             repo.updateThreePhaseStatus(id, status).onSuccess {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Error(it.message ?: "Failed to update status")
             }
         }
@@ -155,7 +183,7 @@ class MotorViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             repo.saveCustomCategory(category).onSuccess {
-                loadData(isAdmin = true)
+                loadData(isAdmin = true, userId = lastUserId)
                 _uiState.value = UiState.Success("save_category")
             }.onFailure {
                 _uiState.value = UiState.Error(it.message ?: "Failed to save category")
@@ -167,7 +195,7 @@ class MotorViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             repo.deleteCustomCategory(id).onSuccess {
-                loadData(isAdmin = true)
+                loadData(isAdmin = true, userId = lastUserId)
                 _uiState.value = UiState.Success("delete_category")
             }.onFailure {
                 _uiState.value = UiState.Error(it.message ?: "Failed to delete category")
@@ -179,8 +207,15 @@ class MotorViewModel : ViewModel() {
     fun saveCustomMotor(motor: CustomMotor) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
-            repo.saveCustomMotor(motor).onSuccess {
-                loadData()
+            repo.saveCustomMotor(motor).onSuccess { savedMotor ->
+                val currentList = _customMotors.value
+                val updatedList = if (currentList.any { it.id == savedMotor.id }) {
+                    currentList.map { if (it.id == savedMotor.id) savedMotor else it }
+                } else {
+                    listOf(savedMotor) + currentList
+                }
+                _customMotors.value = updatedList
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("save_custom_motor")
             }.onFailure {
                 _uiState.value = UiState.Error(it.message ?: "Failed to save motor data")
@@ -191,10 +226,12 @@ class MotorViewModel : ViewModel() {
     fun deleteCustomMotor(id: String) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
+            _customMotors.value = _customMotors.value.filter { it.id != id }
             repo.deleteCustomMotor(id).onSuccess {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("delete_custom_motor")
             }.onFailure {
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Error(it.message ?: "Failed to delete motor data")
             }
         }
@@ -208,10 +245,10 @@ class MotorViewModel : ViewModel() {
                 if (it.id == id) it.copy(status = status) else it
             }
             repo.updateCustomMotorStatus(id, status).onSuccess {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
-                loadData()
+                loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Error(it.message ?: "Failed to update status")
             }
         }

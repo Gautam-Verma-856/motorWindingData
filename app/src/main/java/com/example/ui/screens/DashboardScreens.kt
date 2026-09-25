@@ -48,14 +48,15 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
     
     val pendingCount = singlePhaseMotors.count { it.status == "pending" } + threePhaseMotors.count { it.status == "pending" } + customMotors.count { it.status == "pending" }
     val approvedCount = singlePhaseMotors.count { it.status == "approved" } + threePhaseMotors.count { it.status == "approved" } + customMotors.count { it.status == "approved" }
+    val rejectedCount = singlePhaseMotors.count { it.status == "rejected" } + threePhaseMotors.count { it.status == "rejected" } + customMotors.count { it.status == "rejected" }
     val totalMotorsCount = singlePhaseMotors.size + threePhaseMotors.size + customMotors.size
     
     val pendingUsersCount = usersList.count { it.role == "public" && it.accountStatus == "pending" }
     val activeUsersCount = usersList.count { it.role == "public" && it.accountStatus == "active" }
     val totalPublicUsersCount = usersList.count { it.role == "public" }
     
-    LaunchedEffect(Unit) {
-        motorViewModel.loadData()
+    LaunchedEffect(currentUser) {
+        motorViewModel.loadData(isAdmin = true, userId = currentUser?.id)
         authViewModel.fetchUsers()
     }
     
@@ -107,6 +108,10 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     AnimatedStatCard("Pending Motors", pendingCount, Icons.Rounded.HourglassEmpty, Color(0xFFF59E0B), Modifier.weight(1f))
                 }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AnimatedStatCard("Approved Motors", approvedCount, Icons.Rounded.CheckCircle, Color(0xFF10B981), Modifier.weight(1f))
+                    AnimatedStatCard("Rejected Motors", rejectedCount, Icons.Rounded.Cancel, Color(0xFFEF4444), Modifier.weight(1f))
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     AnimatedStatCard("Public Users", totalPublicUsersCount, Icons.Rounded.People, Color(0xFF06B6D4), Modifier.weight(1f))
                     AnimatedStatCard("Active Users", activeUsersCount, Icons.Rounded.CheckCircle, Color(0xFF10B981), Modifier.weight(1f))
                 }
@@ -154,8 +159,24 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     subtitle = "Browse verified motor winding data",
                     icon = Icons.Rounded.CheckCircle,
                     accentColor = Color(0xFF10B981),
-                    badgeCount = 0
+                    badgeCount = approvedCount
                 ) { navController.navigate("motor_list/approved") }
+
+                PremiumActionCard(
+                    title = "Rejected Motors",
+                    subtitle = "View and re-approve rejected records",
+                    icon = Icons.Rounded.Cancel,
+                    accentColor = Color(0xFFEF4444),
+                    badgeCount = rejectedCount
+                ) { navController.navigate("motor_list/rejected") }
+
+                PremiumActionCard(
+                    title = "All Motors",
+                    subtitle = "Browse all motor records across all statuses",
+                    icon = Icons.AutoMirrored.Rounded.List,
+                    accentColor = Color(0xFF8B5CF6),
+                    badgeCount = totalMotorsCount
+                ) { navController.navigate("motor_list/all") }
                 
                 PremiumActionCard(
                     title = "Manage Public Data",
@@ -169,7 +190,7 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     title = "Manage Custom Categories",
                     subtitle = "Add categories (e.g. Cooler Motor) & custom fields",
                     icon = Icons.Rounded.Category,
-                    accentColor = Color(0xFF8B5CF6),
+                    accentColor = Color(0xFFEC4899),
                     badgeCount = customCategories.size
                 ) { navController.navigate("manage_custom_categories") }
             }
@@ -203,6 +224,9 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
     val context = LocalContext.current
     val currentUser by authViewModel.currentUser.collectAsState()
     val customCategories by motorViewModel.customCategories.collectAsState()
+    val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
+    val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
+    val customMotors by motorViewModel.customMotors.collectAsState()
 
     if (currentUser == null) {
         LaunchedEffect(Unit) {
@@ -211,8 +235,12 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
         return
     }
 
-    LaunchedEffect(Unit) {
-        motorViewModel.loadData(isAdmin = false)
+    val uid = currentUser?.id ?: ""
+    val mySubmissionsCount = singlePhaseMotors.count { it.createdBy == uid } + threePhaseMotors.count { it.createdBy == uid } + customMotors.count { it.createdBy == uid }
+    val approvedMotorsCount = singlePhaseMotors.count { it.isExplicitlyApproved() } + threePhaseMotors.count { it.isExplicitlyApproved() } + customMotors.count { it.isExplicitlyApproved() }
+
+    LaunchedEffect(currentUser) {
+        motorViewModel.loadData(isAdmin = false, userId = currentUser?.id)
     }
     
     Scaffold(
@@ -257,7 +285,7 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                     subtitle = "Browse verified motor winding data",
                     icon = Icons.AutoMirrored.Rounded.List,
                     accentColor = MaterialTheme.colorScheme.primary,
-                    badgeCount = 0
+                    badgeCount = approvedMotorsCount
                 ) { navController.navigate("motor_list/approved") }
 
                 PremiumActionCard(
@@ -273,7 +301,7 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                     subtitle = "Track approval status of your data",
                     icon = Icons.Rounded.History,
                     accentColor = Color(0xFF8B5CF6),
-                    badgeCount = 0
+                    badgeCount = mySubmissionsCount
                 ) { navController.navigate("motor_list/my_submissions") }
             }
             

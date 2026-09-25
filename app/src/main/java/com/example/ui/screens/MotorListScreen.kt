@@ -66,20 +66,34 @@ fun MotorListScreen(
     var selectedCompany by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Filter for generic "approved" / "pending" / "my_submissions" views
+    // Filter for generic "approved" / "pending" / "rejected" / "all" / "my_submissions" views
     var selectedFilter by remember {
         mutableStateOf(
-            if (type == "approved" || type == "pending" || type == "my_submissions") "All"
+            if (type == "approved" || type == "pending" || type == "rejected" || type == "all" || type == "my_submissions") "All"
             else if (type == "single") "Single Phase"
             else "Three Phase"
+        )
+    }
+
+    var selectedStatus by remember(type) {
+        mutableStateOf(
+            when (type) {
+                "pending" -> "Pending"
+                "rejected" -> "Rejected"
+                "approved" -> "Approved"
+                else -> "All Status"
+            }
         )
     }
 
     var fullScreenPhotos by remember { mutableStateOf<List<String>?>(null) }
     var fullScreenInitialIndex by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        motorViewModel.loadData()
+    val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    val targetUserId = currentUserId?.ifBlank { authUid } ?: authUid
+
+    LaunchedEffect(type, role, targetUserId) {
+        motorViewModel.loadData(isAdmin = (role == "admin"), userId = targetUserId)
     }
 
     if (uiState is UiState.Loading) {
@@ -156,24 +170,17 @@ fun MotorListScreen(
     }
 
     // CATEGORY DEFINITIONS
-    val singleCategories = listOf("Self Priming (Tullu Pump)", "Submersible Motor", "Pandubi")
-    val threeCategories = listOf("Monoblock", "Submersible", "Pandubi")
+    val singleCategories = listOf("Self Priming (Tullu Pump)", "Submersible Motor", "Pandubi", "General / Other Motors")
+    val threeCategories = listOf("Monoblock", "Submersible", "Pandubi", "General / Other Motors")
 
     // CHECK IF CATEGORY SELECTION SHOULD BE DISPLAYED
     val isSingleOrThree = (type == "single" || type == "three")
     val showCategoryPicker = isSingleOrThree && selectedCategory == null
 
     if (showCategoryPicker) {
-        // TOP LEVEL: Show 3 Categories view
+        // TOP LEVEL: Show Categories view
         val categoriesList = if (type == "single") singleCategories else threeCategories
         val isSingle = type == "single"
-
-        // Check if there are legacy motors with blank or other categories (must be explicitly approved)
-        val legacyMotorsCount = if (isSingle) {
-            singlePhaseMotors.count { it.isExplicitlyApproved() && (it.category.isBlank() || it.category !in singleCategories) }
-        } else {
-            threePhaseMotors.count { it.isExplicitlyApproved() && (it.category.isBlank() || it.category !in threeCategories) }
-        }
 
         Scaffold(
             topBar = {
@@ -195,6 +202,13 @@ fun MotorListScreen(
                     navigationIcon = {
                         IconButton(onClick = { navController.navigateUp() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            motorViewModel.loadData(isAdmin = (role == "admin"), userId = targetUserId)
+                        }) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Data")
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -228,11 +242,27 @@ fun MotorListScreen(
 
                 items(categoriesList) { cat ->
                     val (count, compCount) = if (isSingle) {
-                        val matching = singlePhaseMotors.filter { it.isExplicitlyApproved() && it.category.equals(cat, ignoreCase = true) }
+                        val matching = singlePhaseMotors.filter { motor ->
+                            val statusOk = if (role == "admin") true else motor.isExplicitlyApproved()
+                            val catOk = if (cat == "General / Other Motors") {
+                                motor.category.isBlank() || motor.category.equals("General / Other Motors", ignoreCase = true) || motor.category !in singleCategories.take(3)
+                            } else {
+                                motor.category.equals(cat, ignoreCase = true)
+                            }
+                            statusOk && catOk
+                        }
                         val comps = matching.map { it.companyName.trim().lowercase() }.filter { it.isNotEmpty() }.distinct().size
                         Pair(matching.size, comps)
                     } else {
-                        val matching = threePhaseMotors.filter { it.isExplicitlyApproved() && it.category.equals(cat, ignoreCase = true) }
+                        val matching = threePhaseMotors.filter { motor ->
+                            val statusOk = if (role == "admin") true else motor.isExplicitlyApproved()
+                            val catOk = if (cat == "General / Other Motors") {
+                                motor.category.isBlank() || motor.category.equals("General / Other Motors", ignoreCase = true) || motor.category !in threeCategories.take(3)
+                            } else {
+                                motor.category.equals(cat, ignoreCase = true)
+                            }
+                            statusOk && catOk
+                        }
                         val comps = matching.map { it.name.trim().lowercase() }.filter { it.isNotEmpty() }.distinct().size
                         Pair(matching.size, comps)
                     }
@@ -250,6 +280,7 @@ fun MotorListScreen(
                             cat.contains("Submersible", ignoreCase = true) -> Icons.Rounded.Waves
                             cat.contains("Pandubi", ignoreCase = true) -> Icons.Rounded.Water
                             cat.contains("Monoblock", ignoreCase = true) -> Icons.Rounded.Build
+                            cat.contains("General", ignoreCase = true) -> Icons.Rounded.Folder
                             else -> Icons.Rounded.ElectricMeter
                         },
                         onClick = {
@@ -257,23 +288,6 @@ fun MotorListScreen(
                             selectedCompany = "All"
                         }
                     )
-                }
-
-                // If legacy records exist, provide option to view them so no data is lost
-                if (legacyMotorsCount > 0) {
-                    item {
-                        CategorySelectionCard(
-                            title = "General / Other Motors",
-                            motorCount = legacyMotorsCount,
-                            companyCount = 0,
-                            gradientColors = listOf(Color(0xFF64748B), Color(0xFF475569)),
-                            icon = Icons.Rounded.Folder,
-                            onClick = {
-                                selectedCategory = "General / Other Motors"
-                                selectedCompany = "All"
-                            }
-                        )
-                    }
                 }
 
                 item {
@@ -284,11 +298,13 @@ fun MotorListScreen(
         return
     }
 
-    // MOTOR LIST SCREEN (Category selected or pending/approved/my_submissions)
+    // MOTOR LIST SCREEN (Category selected or pending/approved/rejected/all/my_submissions)
     val screenTitle = when {
         selectedCategory != null -> selectedCategory!!
         type == "pending" -> "Pending Approval"
         type == "approved" -> "Approved Motor Data"
+        type == "rejected" -> "Rejected Motor Data"
+        type == "all" -> "All Motor Data"
         type == "my_submissions" -> "My Submissions"
         type == "single" -> "Single Phase Motors"
         type == "three" -> "3 Phase Motors"
@@ -299,35 +315,37 @@ fun MotorListScreen(
         selectedCategory != null -> "Company Wise Motor Data"
         type == "pending" -> "Review motor data submitted by public users"
         type == "approved" -> "Browse verified motor winding data"
+        type == "rejected" -> "Review rejected motor submissions"
+        type == "all" -> "Browse all approved, pending, and rejected records"
         type == "my_submissions" -> "Track your submitted motor data"
         else -> "Browse specifications"
     }
 
     // Pre-calculate motors matching the selected category (if applicable)
-    // For Single and Three Phase browsing, ONLY explicitly approved motors are included
-    val singleInCategory = remember(singlePhaseMotors, selectedCategory, type) {
-        val baseList = if (type == "single") {
+    // For non-admin public browsing, ONLY explicitly approved motors are included
+    val singleInCategory = remember(singlePhaseMotors, selectedCategory, type, role) {
+        val baseList = if (role != "admin" && type != "my_submissions") {
             singlePhaseMotors.filter { it.isExplicitlyApproved() }
         } else {
             singlePhaseMotors
         }
         if (type != "single" || selectedCategory == null) baseList
         else if (selectedCategory == "General / Other Motors") {
-            baseList.filter { it.category.isBlank() || it.category !in singleCategories }
+            baseList.filter { it.category.isBlank() || it.category.equals("General / Other Motors", ignoreCase = true) || it.category !in singleCategories.take(3) }
         } else {
             baseList.filter { it.category.equals(selectedCategory, ignoreCase = true) }
         }
     }
 
-    val threeInCategory = remember(threePhaseMotors, selectedCategory, type) {
-        val baseList = if (type == "three") {
+    val threeInCategory = remember(threePhaseMotors, selectedCategory, type, role) {
+        val baseList = if (role != "admin" && type != "my_submissions") {
             threePhaseMotors.filter { it.isExplicitlyApproved() }
         } else {
             threePhaseMotors
         }
         if (type != "three" || selectedCategory == null) baseList
         else if (selectedCategory == "General / Other Motors") {
-            baseList.filter { it.category.isBlank() || it.category !in threeCategories }
+            baseList.filter { it.category.isBlank() || it.category.equals("General / Other Motors", ignoreCase = true) || it.category !in threeCategories.take(3) }
         } else {
             baseList.filter { it.category.equals(selectedCategory, ignoreCase = true) }
         }
@@ -366,6 +384,13 @@ fun MotorListScreen(
                         }
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        motorViewModel.loadData(isAdmin = (role == "admin"), userId = targetUserId)
+                    }) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Data")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -438,8 +463,8 @@ fun MotorListScreen(
                     }
                 }
 
-                // TABS FOR APPROVED / PENDING / MY_SUBMISSIONS
-                if (type == "approved" || type == "pending" || type == "my_submissions") {
+                // TABS FOR APPROVED / PENDING / REJECTED / ALL / MY_SUBMISSIONS
+                if (type == "approved" || type == "pending" || type == "rejected" || type == "all" || type == "my_submissions") {
                     Spacer(modifier = Modifier.height(10.dp))
                     val filters = listOf("All", "Single Phase", "Three Phase", "Custom Categories")
                     Row(
@@ -458,20 +483,53 @@ fun MotorListScreen(
                         }
                     }
                 }
-            }
 
-            // Resolved current user UID for My Submissions matching
-            val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
-            val targetUserId = currentUserId?.ifBlank { authUid } ?: authUid
+                // STATUS TABS FOR ADMIN AND MY SUBMISSIONS
+                val showStatusChips = role == "admin" || type == "my_submissions"
+                if (showStatusChips) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Filter by Status:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    val statusChips = listOf("All Status", "Pending", "Approved", "Rejected")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        statusChips.forEach { statusOption ->
+                            FilterChip(
+                                selected = selectedStatus == statusOption,
+                                onClick = { selectedStatus = statusOption },
+                                label = { Text(statusOption) },
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
 
             // FILTER LIST ITEMS
             val filteredSingle = singleInCategory.filter { motor ->
                 val matchesType = when (type) {
-                    "single" -> motor.isExplicitlyApproved()
+                    "single" -> true
                     "approved" -> motor.isExplicitlyApproved()
                     "pending" -> motor.isPending()
+                    "rejected" -> motor.isRejected()
+                    "all" -> true
                     "my_submissions" -> (targetUserId.isNotEmpty() && motor.createdBy == targetUserId)
-                    else -> motor.isExplicitlyApproved()
+                    else -> true
+                }
+                val matchesStatus = when (selectedStatus) {
+                    "Pending" -> motor.isPending()
+                    "Approved" -> motor.isExplicitlyApproved()
+                    "Rejected" -> motor.isRejected()
+                    else -> true
                 }
                 val matchesCompany = selectedCompany == "All" || motor.companyName.equals(selectedCompany, ignoreCase = true)
                 val matchesSearch = searchQuery.isBlank() ||
@@ -479,16 +537,25 @@ fun MotorListScreen(
                         motor.hp.contains(searchQuery, ignoreCase = true) ||
                         motor.category.contains(searchQuery, ignoreCase = true)
                 val matchesFilterChip = selectedFilter == "All" || selectedFilter == "Single Phase"
-                matchesType && matchesCompany && matchesSearch && matchesFilterChip
+                val publicBrowseAllowed = if (role != "admin" && type != "my_submissions") motor.isExplicitlyApproved() else true
+                matchesType && matchesStatus && matchesCompany && matchesSearch && matchesFilterChip && publicBrowseAllowed
             }
 
             val filteredThree = threeInCategory.filter { motor ->
                 val matchesType = when (type) {
-                    "three" -> motor.isExplicitlyApproved()
+                    "three" -> true
                     "approved" -> motor.isExplicitlyApproved()
                     "pending" -> motor.isPending()
+                    "rejected" -> motor.isRejected()
+                    "all" -> true
                     "my_submissions" -> (targetUserId.isNotEmpty() && motor.createdBy == targetUserId)
-                    else -> motor.isExplicitlyApproved()
+                    else -> true
+                }
+                val matchesStatus = when (selectedStatus) {
+                    "Pending" -> motor.isPending()
+                    "Approved" -> motor.isExplicitlyApproved()
+                    "Rejected" -> motor.isRejected()
+                    else -> true
                 }
                 val matchesCompany = selectedCompany == "All" || motor.name.equals(selectedCompany, ignoreCase = true)
                 val matchesSearch = searchQuery.isBlank() ||
@@ -496,22 +563,32 @@ fun MotorListScreen(
                         motor.hp.contains(searchQuery, ignoreCase = true) ||
                         motor.category.contains(searchQuery, ignoreCase = true)
                 val matchesFilterChip = selectedFilter == "All" || selectedFilter == "Three Phase"
-                matchesType && matchesCompany && matchesSearch && matchesFilterChip
+                val publicBrowseAllowed = if (role != "admin" && type != "my_submissions") motor.isExplicitlyApproved() else true
+                matchesType && matchesStatus && matchesCompany && matchesSearch && matchesFilterChip && publicBrowseAllowed
             }
 
             val filteredCustom = customMotors.filter { motor ->
                 val matchesType = when (type) {
                     "approved" -> motor.isExplicitlyApproved()
                     "pending" -> motor.isPending()
+                    "rejected" -> motor.isRejected()
+                    "all" -> true
                     "my_submissions" -> (targetUserId.isNotEmpty() && motor.createdBy == targetUserId)
-                    else -> false
+                    else -> if (role == "admin") true else false
+                }
+                val matchesStatus = when (selectedStatus) {
+                    "Pending" -> motor.isPending()
+                    "Approved" -> motor.isExplicitlyApproved()
+                    "Rejected" -> motor.isRejected()
+                    else -> true
                 }
                 val matchesSearch = searchQuery.isBlank() ||
                         motor.companyName.contains(searchQuery, ignoreCase = true) ||
                         motor.motorName.contains(searchQuery, ignoreCase = true) ||
                         motor.hp.contains(searchQuery, ignoreCase = true)
                 val matchesFilterChip = selectedFilter == "All" || selectedFilter == "Custom Categories"
-                matchesType && matchesSearch && matchesFilterChip
+                val publicBrowseAllowed = if (role != "admin" && type != "my_submissions") motor.isExplicitlyApproved() else true
+                matchesType && matchesStatus && matchesSearch && matchesFilterChip && publicBrowseAllowed
             }
 
             if (isLoadingData) {
@@ -665,13 +742,15 @@ fun CategorySelectionCard(
 fun EmptyStateView(type: String, selectedCategory: String? = null) {
     val title = when (type) {
         "pending" -> "All caught up!"
+        "rejected" -> "No rejected submissions"
         "my_submissions" -> "No submissions yet"
         else -> if (selectedCategory != null) "No motors in $selectedCategory" else "No motors found"
     }
     val subtitle = when (type) {
         "pending" -> "There are no pending submissions to review."
-        "my_submissions" -> "Submit motor winding data to see it here."
-        else -> "Try adjusting your search or company filter."
+        "rejected" -> "There are no rejected records."
+        "my_submissions" -> "Submit motor winding data to track approval status here."
+        else -> "Try adjusting your search, status, or company filter."
     }
 
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
@@ -682,7 +761,11 @@ fun EmptyStateView(type: String, selectedCategory: String? = null) {
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = if (type == "pending") Icons.Rounded.CheckCircle else Icons.Rounded.Inbox,
+                imageVector = when (type) {
+                    "pending" -> Icons.Rounded.CheckCircle
+                    "rejected" -> Icons.Rounded.ThumbUp
+                    else -> Icons.Rounded.Inbox
+                },
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.primary
@@ -812,6 +895,16 @@ fun PremiumSinglePhaseMotorCard(
                 }
             }
 
+            if (motor.createdAt > 0L) {
+                val dateStr = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(motor.createdAt))
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Submitted: $dateStr", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.height(8.dp))
@@ -822,7 +915,7 @@ fun PremiumSinglePhaseMotorCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (role == "admin" && motor.status == "pending") {
+                if (role == "admin" && motor.isPending()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilledTonalButton(
                             onClick = onApprove,
@@ -844,6 +937,17 @@ fun PremiumSinglePhaseMotorCard(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Reject", style = MaterialTheme.typography.labelSmall)
                         }
+                    }
+                } else if (role == "admin" && motor.isRejected()) {
+                    FilledTonalButton(
+                        onClick = onApprove,
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFF10B981).copy(alpha = 0.2f), contentColor = Color(0xFF047857)),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Re-Approve", style = MaterialTheme.typography.labelSmall)
                     }
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))
@@ -984,6 +1088,16 @@ fun PremiumThreePhaseMotorCard(
                 }
             }
 
+            if (motor.createdAt > 0L) {
+                val dateStr = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(motor.createdAt))
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Submitted: $dateStr", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.height(8.dp))
@@ -994,7 +1108,7 @@ fun PremiumThreePhaseMotorCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (role == "admin" && motor.status == "pending") {
+                if (role == "admin" && motor.isPending()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilledTonalButton(
                             onClick = onApprove,
@@ -1016,6 +1130,17 @@ fun PremiumThreePhaseMotorCard(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Reject", style = MaterialTheme.typography.labelSmall)
                         }
+                    }
+                } else if (role == "admin" && motor.isRejected()) {
+                    FilledTonalButton(
+                        onClick = onApprove,
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFF10B981).copy(alpha = 0.2f), contentColor = Color(0xFF047857)),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Re-Approve", style = MaterialTheme.typography.labelSmall)
                     }
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))

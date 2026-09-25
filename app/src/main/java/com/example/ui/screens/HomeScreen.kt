@@ -98,8 +98,8 @@ fun HomeScreen(
     var contactVisible by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
-        motorViewModel?.loadData(isAdmin = currentUser.role == "admin")
+    LaunchedEffect(currentUser) {
+        motorViewModel?.loadData(isAdmin = currentUser.role == "admin", userId = currentUser.id)
         headerVisible = true
         delay(100)
         cardsVisible = true
