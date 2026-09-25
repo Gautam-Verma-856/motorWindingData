@@ -15,6 +15,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -74,7 +76,13 @@ fun FuturisticBackground() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(navController: NavController, currentUser: User?, onLogout: () -> Unit) {
+fun HomeScreen(
+    navController: NavController,
+    currentUser: User?,
+    motorViewModel: com.example.viewmodel.MotorViewModel? = null,
+    onLogout: () -> Unit
+) {
+    val customCategories = motorViewModel?.customCategories?.collectAsState()?.value ?: emptyList()
     var headerVisible by remember { mutableStateOf(false) }
     var cardsVisible by remember { mutableStateOf(false) }
     var loginVisible by remember { mutableStateOf(false) }
@@ -82,6 +90,7 @@ fun HomeScreen(navController: NavController, currentUser: User?, onLogout: () ->
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
+        motorViewModel?.loadData()
         headerVisible = true
         delay(100)
         cardsVisible = true
@@ -116,43 +125,20 @@ fun HomeScreen(navController: NavController, currentUser: User?, onLogout: () ->
                         var menuExpanded by remember { mutableStateOf(false) }
                         
                         if (currentUser == null) {
-                            // SMALL, PREMIUM ADMIN LOGIN BUTTON AT TOP-RIGHT
-                            val interactionSource = remember { MutableInteractionSource() }
-                            val isPressed by interactionSource.collectIsPressedAsState()
-                            val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
-
-                            Surface(
-                                onClick = { navController.navigate("admin_login") },
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), // Subtle tonal style
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                                interactionSource = interactionSource,
-                                modifier = Modifier
-                                    .scale(scale)
-                                    .padding(end = 4.dp)
+                            // Minimal top-right Lock icon for Admin Login
+                            IconButton(
+                                onClick = { navController.navigate("admin_login") }
                             ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Lock, 
-                                        contentDescription = "Admin Login", 
-                                        modifier = Modifier.size(16.dp), 
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        "Admin Login", 
-                                        style = MaterialTheme.typography.labelMedium, 
-                                        fontWeight = FontWeight.Bold, 
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Rounded.Lock,
+                                    contentDescription = "Admin Login",
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         } else {
                             IconButton(onClick = onLogout) {
-                                Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.error)
+                                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.error)
                             }
                         }
                         
@@ -181,6 +167,22 @@ fun HomeScreen(navController: NavController, currentUser: User?, onLogout: () ->
                                     onClick = { menuExpanded = false; navController.navigate("motor_list/three") },
                                     leadingIcon = { Icon(Icons.Rounded.Build, contentDescription = null, tint = Color(0xFF10B981)) }
                                 )
+                                if (customCategories.isNotEmpty()) {
+                                    customCategories.forEach { cat ->
+                                        DropdownMenuItem(
+                                            text = { Text(cat.name) },
+                                            onClick = { menuExpanded = false; navController.navigate("custom_motor_list/${cat.id}") },
+                                            leadingIcon = { Icon(Icons.Rounded.Category, contentDescription = null, tint = Color(0xFF8B5CF6)) }
+                                        )
+                                    }
+                                }
+                                if (currentUser?.role == "admin") {
+                                    DropdownMenuItem(
+                                        text = { Text("Manage Categories") },
+                                        onClick = { menuExpanded = false; navController.navigate("manage_custom_categories") },
+                                        leadingIcon = { Icon(Icons.Rounded.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                                    )
+                                }
                                 DropdownMenuItem(
                                     text = { Text("Contact Details") },
                                     onClick = { menuExpanded = false; navController.navigate("contact") },
@@ -263,7 +265,7 @@ fun HomeScreen(navController: NavController, currentUser: User?, onLogout: () ->
                     )
 
                     GlassmorphicActionCard(
-                        title = "Single Phase",
+                        title = "Single Phase Motor",
                         subtitle = "Explore Winding Data",
                         icon = Icons.Rounded.FlashOn,
                         iconTint = Color(0xFFF59E0B),
@@ -272,13 +274,35 @@ fun HomeScreen(navController: NavController, currentUser: User?, onLogout: () ->
                     )
 
                     GlassmorphicActionCard(
-                        title = "3 Phase",
+                        title = "3 Phase Motor",
                         subtitle = "Explore Winding Data",
                         icon = Icons.Rounded.Build,
                         iconTint = Color(0xFF10B981),
                         gradientColors = listOf(Color(0xFF10B981), Color(0xFF3B82F6)),
                         onClick = { navController.navigate("motor_list/three") }
                     )
+
+                    if (customCategories.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            "Custom Categories",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+
+                        customCategories.forEach { cat ->
+                            GlassmorphicActionCard(
+                                title = cat.name,
+                                subtitle = if (cat.description.isNotEmpty()) cat.description else "Explore Winding Data",
+                                icon = Icons.Rounded.Category,
+                                iconTint = Color(0xFF8B5CF6),
+                                gradientColors = listOf(Color(0xFF8B5CF6), Color(0xFFEC4899)),
+                                onClick = { navController.navigate("custom_motor_list/${cat.id}") }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -513,7 +537,7 @@ fun GlassmorphicActionCard(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.ArrowForward,
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowForward,
                         contentDescription = "Navigate",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)

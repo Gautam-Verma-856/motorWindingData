@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,10 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.rounded.Block
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,14 +20,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.viewmodel.AuthViewModel
 import com.example.ui.components.ConfirmationDialog
+import com.example.viewmodel.AuthViewModel
+import com.example.viewmodel.MotorViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UserManagementScreen(navController: NavController, authViewModel: AuthViewModel, initialFilter: String? = null) {
+fun UserManagementScreen(
+    navController: NavController,
+    authViewModel: AuthViewModel,
+    motorViewModel: MotorViewModel? = null,
+    initialFilter: String? = null
+) {
     val usersList by authViewModel.usersList.collectAsState()
     val isFetchingUsers by authViewModel.isFetchingUsers.collectAsState()
+    val singlePhaseMotors = motorViewModel?.singlePhaseMotors?.collectAsState()?.value ?: emptyList()
+    val threePhaseMotors = motorViewModel?.threePhaseMotors?.collectAsState()?.value ?: emptyList()
     
     var userToDelete by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
@@ -52,6 +58,7 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
     
     LaunchedEffect(Unit) {
         authViewModel.fetchUsers()
+        motorViewModel?.loadData()
     }
     
     if (userToDelete != null) {
@@ -74,7 +81,7 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
                 title = { 
                     Column {
                         Text("Manage Public Users", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("Manage registered public accounts", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Manage registered public accounts & submissions", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 navigationIcon = {
@@ -96,7 +103,7 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search by name or email...") },
+                    placeholder = { Text("Search by name, email or mobile...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
@@ -133,7 +140,9 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
             }
             
             val filteredUsers = usersList.filter { user ->
-                val matchesSearch = user.name.contains(searchQuery, ignoreCase = true) || user.email.contains(searchQuery, ignoreCase = true)
+                val matchesSearch = user.name.contains(searchQuery, ignoreCase = true) || 
+                                    user.email.contains(searchQuery, ignoreCase = true) ||
+                                    user.mobile.contains(searchQuery, ignoreCase = true)
                 val matchesFilter = when (statusFilter) {
                     "Pending" -> user.accountStatus == "pending"
                     "Active" -> user.accountStatus == "active"
@@ -150,7 +159,7 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
                 }
             } else if (filteredUsers.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(
                             modifier = Modifier.size(100.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
                             contentAlignment = Alignment.Center
@@ -175,6 +184,24 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     items(filteredUsers) { user ->
+                        val userSingleCount = singlePhaseMotors.count { it.createdBy == user.id || (it.createdByName.isNotBlank() && it.createdByName.equals(user.name, ignoreCase = true)) }
+                        val userThreeCount = threePhaseMotors.count { it.createdBy == user.id || (it.createdByName.isNotBlank() && it.createdByName.equals(user.name, ignoreCase = true)) }
+                        val totalUserMotors = userSingleCount + userThreeCount
+
+                        val statusColor = when (user.accountStatus) {
+                            "active" -> Color(0xFF10B981)
+                            "pending" -> Color(0xFFF59E0B)
+                            "rejected" -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.error
+                        }
+                        val statusText = when (user.accountStatus) {
+                            "pending" -> "PENDING APPROVAL"
+                            "active" -> "ACTIVE / APPROVED"
+                            "rejected" -> "REJECTED"
+                            "blocked", "suspended" -> "SUSPENDED"
+                            else -> user.accountStatus.uppercase()
+                        }
+
                         ElevatedCard(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(20.dp),
@@ -182,6 +209,7 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
                             elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
+                                // Header: Avatar, Name, Email, Status Badge
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Box(
                                         modifier = Modifier.size(48.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
@@ -189,19 +217,12 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
                                     ) {
                                         Text(user.name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                                     }
-                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Spacer(modifier = Modifier.width(14.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(user.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                         Text(user.email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     
-                                    val statusColor = when (user.accountStatus) {
-                                        "active" -> Color(0xFF10B981)
-                                        "pending" -> Color(0xFFF59E0B)
-                                        "rejected" -> MaterialTheme.colorScheme.error
-                                        else -> MaterialTheme.colorScheme.error
-                                    }
-                                    val statusText = if (user.accountStatus == "pending") "PENDING APPROVAL" else user.accountStatus.uppercase()
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
                                         color = statusColor.copy(alpha = 0.15f)
@@ -215,9 +236,127 @@ fun UserManagementScreen(navController: NavController, authViewModel: AuthViewMo
                                         )
                                     }
                                 }
+
+                                Spacer(modifier = Modifier.height(14.dp))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                // Mobile Number Row
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Phone,
+                                            contentDescription = "Mobile Number",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = if (user.mobile.isNotBlank()) user.mobile else "No mobile provided",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (user.mobile.isNotBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    if (user.mobile.isNotBlank()) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant
+                                        ) {
+                                            Text(
+                                                text = "Mobile Added",
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                // Email Verification Status Row
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Email,
+                                            contentDescription = "Email Verification",
+                                            tint = if (user.emailVerified) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = if (user.emailVerified) "Email Verified" else "Email Verification Pending",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (user.emailVerified) Color(0xFF10B981) else Color(0xFFF59E0B)
+                                        )
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (user.emailVerified) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f),
+                                        border = BorderStroke(1.dp, if (user.emailVerified) Color(0xFF10B981).copy(alpha = 0.3f) else Color(0xFFF59E0B).copy(alpha = 0.3f))
+                                    ) {
+                                        Text(
+                                            text = if (user.emailVerified) "Verified" else "Pending",
+                                            color = if (user.emailVerified) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Contributed Motor Data summary row
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.ElectricBolt,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        if (totalUserMotors > 0) {
+                                            Text(
+                                                text = "Added Motors: $totalUserMotors ($userSingleCount 1-Phase • $userThreeCount 3-Phase)",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "No motor data submitted yet",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
                                 
-                                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(14.dp))
                                 
+                                // Action Buttons
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     when (user.accountStatus) {
                                         "pending" -> {

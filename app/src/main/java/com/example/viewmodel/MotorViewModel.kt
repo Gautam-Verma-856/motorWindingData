@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.model.SinglePhaseMotor
 import com.example.model.ThreePhaseMotor
+import com.example.model.CustomCategory
+import com.example.model.CustomMotor
 import com.example.repository.MotorRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +27,12 @@ class MotorViewModel : ViewModel() {
     private val _threePhaseMotors = MutableStateFlow<List<ThreePhaseMotor>>(emptyList())
     val threePhaseMotors = _threePhaseMotors.asStateFlow()
     
+    private val _customCategories = MutableStateFlow<List<CustomCategory>>(emptyList())
+    val customCategories = _customCategories.asStateFlow()
+    
+    private val _customMotors = MutableStateFlow<List<CustomMotor>>(emptyList())
+    val customMotors = _customMotors.asStateFlow()
+    
     private val _uiState = MutableStateFlow<UiState>(UiState.Idle)
     val uiState = _uiState.asStateFlow()
     
@@ -36,6 +44,8 @@ class MotorViewModel : ViewModel() {
             _isLoadingData.value = true
             repo.getSinglePhaseMotors().onSuccess { _singlePhaseMotors.value = it }
             repo.getThreePhaseMotors().onSuccess { _threePhaseMotors.value = it }
+            repo.getCustomCategories().onSuccess { _customCategories.value = it }
+            repo.getCustomMotors().onSuccess { _customMotors.value = it }
             _isLoadingData.value = false
         }
     }
@@ -115,8 +125,78 @@ class MotorViewModel : ViewModel() {
             }
         }
     }
+
+    // --- Custom Category Operations ---
+    fun saveCustomCategory(category: CustomCategory) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            repo.saveCustomCategory(category).onSuccess {
+                loadData()
+                _uiState.value = UiState.Success("save_category")
+            }.onFailure {
+                _uiState.value = UiState.Error(it.message ?: "Failed to save category")
+            }
+        }
+    }
+
+    fun deleteCustomCategory(id: String) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            repo.deleteCustomCategory(id).onSuccess {
+                loadData()
+                _uiState.value = UiState.Success("delete_category")
+            }.onFailure {
+                _uiState.value = UiState.Error(it.message ?: "Failed to delete category")
+            }
+        }
+    }
+
+    // --- Custom Motor Operations ---
+    fun saveCustomMotor(motor: CustomMotor) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            repo.saveCustomMotor(motor).onSuccess {
+                loadData()
+                _uiState.value = UiState.Success("save_custom_motor")
+            }.onFailure {
+                _uiState.value = UiState.Error(it.message ?: "Failed to save motor data")
+            }
+        }
+    }
+
+    fun deleteCustomMotor(id: String) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            repo.deleteCustomMotor(id).onSuccess {
+                loadData()
+                _uiState.value = UiState.Success("delete_custom_motor")
+            }.onFailure {
+                _uiState.value = UiState.Error(it.message ?: "Failed to delete motor data")
+            }
+        }
+    }
+
+    fun updateCustomMotorStatus(id: String, status: String) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            repo.updateCustomMotorStatus(id, status).onSuccess {
+                loadData()
+                _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
+            }.onFailure {
+                _uiState.value = UiState.Error(it.message ?: "Failed to update status")
+            }
+        }
+    }
     
     fun resetUiState() {
         _uiState.value = UiState.Idle
+    }
+
+    fun getImgBBConfigDiagnostic(): MotorRepository.ImgBBDiagnostic {
+        return repo.getImgBBConfigDiagnostic()
+    }
+
+    fun getSafeDiagnostic(): MotorRepository.SafeDiagnostic {
+        return repo.getSafeDiagnostic()
     }
 }

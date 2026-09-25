@@ -4,6 +4,7 @@ data class SinglePhaseMotor(
     val id: String = "",
     val photoUrl: String = "", // Kept for backward compatibility
     val photoUrls: List<String> = emptyList(),
+    val category: String = "", // "Self Priming (Tullu Pump)", "Submersible Motor", "Pandubi", or ""
     val companyName: String = "",
     val hp: String = "",
     val capacitor: String = "",
@@ -17,6 +18,7 @@ data class SinglePhaseMotor(
     val startingWeight: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
+    val createdByName: String = "",
     val status: String = "approved"
 )
 
@@ -24,7 +26,8 @@ data class ThreePhaseMotor(
     val id: String = "",
     val photoUrl: String = "", // Kept for backward compatibility
     val photoUrls: List<String> = emptyList(),
-    val name: String = "",
+    val category: String = "", // "Monoblock", "Submersible", "Pandubi", or ""
+    val name: String = "", // Company/Motor Name
     val slot: String = "",
     val hp: String = "",
     val pitch: String = "",
@@ -33,5 +36,43 @@ data class ThreePhaseMotor(
     val weight: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
+    val createdByName: String = "",
     val status: String = "approved"
+)
+
+data class CustomCategoryField(
+    val id: String = "",
+    val fieldName: String = "", // e.g. "RPM", "Wire Gauge", "Turns", "Weight", "Capacitor"
+    val fieldType: String = "text", // "text" or "number"
+    val isRequired: Boolean = false,
+    val order: Int = 0
+)
+
+data class CustomCategory(
+    val id: String = "",
+    val name: String = "", // e.g. "Cooler Motor", "Farata Motor", "Exhaust Fan Motor"
+    val description: String = "",
+    val iconName: String = "Build",
+    val imageUrl: String = "",
+    val isActive: Boolean = true,
+    val allowPublicSubmissions: Boolean = true,
+    val fields: List<CustomCategoryField> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis(),
+    val createdBy: String = ""
+)
+
+data class CustomMotor(
+    val id: String = "",
+    val categoryId: String = "",
+    val categoryName: String = "",
+    val companyName: String = "", // Mandatory
+    val motorName: String = "", // Model / Motor Name
+    val hp: String = "",
+    val photoUrl: String = "", // Kept for backward compatibility
+    val photoUrls: List<String> = emptyList(),
+    val customFields: Map<String, String> = emptyMap(), // fieldId or fieldName -> value string
+    val createdAt: Long = System.currentTimeMillis(),
+    val createdBy: String = "",
+    val createdByName: String = "",
+    val status: String = "approved" // "approved", "pending", "rejected"
 )

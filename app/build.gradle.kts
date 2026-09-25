@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -5,6 +8,43 @@ plugins {
   alias(libs.plugins.roborazzi)
   alias(libs.plugins.secrets)
   alias(libs.plugins.google.services)
+}
+
+fun resolveSecret(key: String): String {
+  val isRealValue: (String?) -> Boolean = { v ->
+    !v.isNullOrEmpty() &&
+      !v.startsWith("YOUR_") &&
+      !v.startsWith("PASTE_") &&
+      !v.startsWith("$") &&
+      !v.startsWith("<") &&
+      !v.equals("null", ignoreCase = true) &&
+      !v.equals("undefined", ignoreCase = true) &&
+      !v.equals("MY_API_KEY", ignoreCase = true)
+  }
+
+  // 1. Check root .env file (local secrets, gitignored)
+  val envFile = rootProject.file(".env")
+  if (envFile.exists()) {
+    val props = Properties()
+    FileInputStream(envFile).use { props.load(it) }
+    val v = props.getProperty(key)?.trim()
+    if (isRealValue(v)) return v!!
+  }
+
+  // 2. Check System Environment variables (GitHub Actions secrets / AI Studio environment)
+  val envVal = System.getenv(key)?.trim()
+  if (isRealValue(envVal)) return envVal!!
+
+  // 3. Check root .env.example file (fallback template)
+  val exampleFile = rootProject.file(".env.example")
+  if (exampleFile.exists()) {
+    val props = Properties()
+    FileInputStream(exampleFile).use { props.load(it) }
+    val v = props.getProperty(key)?.trim()
+    if (isRealValue(v)) return v!!
+  }
+
+  return ""
 }
 
 android {
@@ -21,6 +61,9 @@ android {
 
     versionCode = calcVersionCode
     versionName = calcVersionName
+
+    val imgbbApiKey = resolveSecret("IMGBB_API_KEY")
+    buildConfigField("String", "IMGBB_API_KEY", "\"$imgbbApiKey\"")
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -74,6 +117,7 @@ secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+  ignoreList.add("IMGBB_API_KEY")
 }
 
 // Some unused dependencies are commented out below instead of being removed.

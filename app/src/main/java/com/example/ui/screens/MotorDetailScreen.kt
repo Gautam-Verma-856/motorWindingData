@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -10,20 +12,24 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Label
+import androidx.compose.material.icons.rounded.ZoomIn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.ui.components.FullScreenImageViewer
 import com.example.viewmodel.MotorViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,17 +44,22 @@ fun MotorDetailScreen(
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
 
+    var fullScreenPhotos by remember { mutableStateOf<List<String>?>(null) }
+    var fullScreenInitialIndex by remember { mutableIntStateOf(0) }
+
     val motorName: String
     val motorSubtitle: String
     
     if (type == "single") {
         val motor = singlePhaseMotors.find { it.id == id }
         motorName = motor?.companyName ?: "Details"
-        motorSubtitle = "Single Phase • ${motor?.hp ?: "?"} HP"
+        val catInfo = if (motor?.category?.isNotEmpty() == true) "${motor.category} • " else ""
+        motorSubtitle = "Single Phase • ${catInfo}${motor?.hp ?: "?"} HP"
     } else {
         val motor = threePhaseMotors.find { it.id == id }
         motorName = motor?.name ?: "Details"
-        motorSubtitle = "3 Phase • ${motor?.hp ?: "?"} HP"
+        val catInfo = if (motor?.category?.isNotEmpty() == true) "${motor.category} • " else ""
+        motorSubtitle = "3 Phase • ${catInfo}${motor?.hp ?: "?"} HP"
     }
 
     Scaffold(
@@ -86,23 +97,66 @@ fun MotorDetailScreen(
                 if (motor != null) {
                     val displayUrls = if (motor.photoUrls.isNotEmpty()) motor.photoUrls else if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList()
                     if (displayUrls.isNotEmpty()) {
-                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            displayUrls.forEach { url ->
-                                AsyncImage(
-                                    model = url,
-                                    contentDescription = "Motor Photo",
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            displayUrls.forEachIndexed { index, url ->
+                                Box(
                                     modifier = Modifier
                                         .height(250.dp)
                                         .width(if (displayUrls.size == 1) 360.dp else 280.dp)
-                                        .clip(RoundedCornerShape(24.dp)),
-                                    contentScale = ContentScale.Crop
-                                )
+                                        .clip(RoundedCornerShape(24.dp))
+                                        .clickable {
+                                            fullScreenPhotos = displayUrls
+                                            fullScreenInitialIndex = index
+                                        }
+                                ) {
+                                    AsyncImage(
+                                        model = url,
+                                        contentDescription = "Motor Photo ${index + 1}, tap for full screen",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(12.dp),
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.6f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ZoomIn,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = if (displayUrls.size > 1) "${index + 1}/${displayUrls.size}" else "Full View",
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                     
                     DetailSection(title = "Basic Information", icon = Icons.Rounded.Info) {
                         DetailRow("Company Name", motor.companyName)
+                        if (motor.category.isNotEmpty()) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
+                            DetailRow("Category", motor.category)
+                        }
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
                         DetailRow("HP", motor.hp)
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
@@ -129,6 +183,9 @@ fun MotorDetailScreen(
                         DetailRow("Weight", motor.startingWeight)
                     }
                     
+                    if (motor.createdByName.isNotBlank()) {
+                        AddedByCard(name = motor.createdByName)
+                    }
                 } else {
                     Text("Motor not found.")
                 }
@@ -137,23 +194,66 @@ fun MotorDetailScreen(
                 if (motor != null) {
                     val displayUrls = if (motor.photoUrls.isNotEmpty()) motor.photoUrls else if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList()
                     if (displayUrls.isNotEmpty()) {
-                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            displayUrls.forEach { url ->
-                                AsyncImage(
-                                    model = url,
-                                    contentDescription = "Motor Photo",
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            displayUrls.forEachIndexed { index, url ->
+                                Box(
                                     modifier = Modifier
                                         .height(250.dp)
                                         .width(if (displayUrls.size == 1) 360.dp else 280.dp)
-                                        .clip(RoundedCornerShape(24.dp)),
-                                    contentScale = ContentScale.Crop
-                                )
+                                        .clip(RoundedCornerShape(24.dp))
+                                        .clickable {
+                                            fullScreenPhotos = displayUrls
+                                            fullScreenInitialIndex = index
+                                        }
+                                ) {
+                                    AsyncImage(
+                                        model = url,
+                                        contentDescription = "Motor Photo ${index + 1}, tap for full screen",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    Surface(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(12.dp),
+                                        shape = CircleShape,
+                                        color = Color.Black.copy(alpha = 0.6f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ZoomIn,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = if (displayUrls.size > 1) "${index + 1}/${displayUrls.size}" else "Full View",
+                                                color = Color.White,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                     
                     DetailSection(title = "Basic Information", icon = Icons.Rounded.Info) {
                         DetailRow("Company Name", motor.name)
+                        if (motor.category.isNotEmpty()) {
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
+                            DetailRow("Category", motor.category)
+                        }
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
                         DetailRow("Slot", motor.slot)
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
@@ -170,11 +270,65 @@ fun MotorDetailScreen(
                         DetailRow("Weight", motor.weight)
                     }
                     
+                    if (motor.createdByName.isNotBlank()) {
+                        AddedByCard(name = motor.createdByName)
+                    }
                 } else {
                     Text("Motor not found.")
                 }
             }
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+
+    if (fullScreenPhotos != null) {
+        FullScreenImageViewer(
+            photos = fullScreenPhotos!!,
+            initialIndex = fullScreenInitialIndex,
+            onDismiss = { fullScreenPhotos = null }
+        )
+    }
+}
+
+@Composable
+fun AddedByCard(name: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = "Added by: $name",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Public Contributor",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

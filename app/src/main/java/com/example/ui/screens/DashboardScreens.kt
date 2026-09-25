@@ -41,12 +41,14 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
     val context = LocalContext.current
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
+    val customMotors by motorViewModel.customMotors.collectAsState()
+    val customCategories by motorViewModel.customCategories.collectAsState()
     val usersList by authViewModel.usersList.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
     
-    val pendingCount = singlePhaseMotors.count { it.status == "pending" } + threePhaseMotors.count { it.status == "pending" }
-    val approvedCount = singlePhaseMotors.count { it.status == "approved" } + threePhaseMotors.count { it.status == "approved" }
-    val totalMotorsCount = singlePhaseMotors.size + threePhaseMotors.size
+    val pendingCount = singlePhaseMotors.count { it.status == "pending" } + threePhaseMotors.count { it.status == "pending" } + customMotors.count { it.status == "pending" }
+    val approvedCount = singlePhaseMotors.count { it.status == "approved" } + threePhaseMotors.count { it.status == "approved" } + customMotors.count { it.status == "approved" }
+    val totalMotorsCount = singlePhaseMotors.size + threePhaseMotors.size + customMotors.size
     
     val pendingUsersCount = usersList.count { it.role == "public" && it.accountStatus == "pending" }
     val activeUsersCount = usersList.count { it.role == "public" && it.accountStatus == "active" }
@@ -119,18 +121,18 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                 }
             }
             
-            // QUICK ACTIONS
-            AdminSectionTitle("Quick Actions")
+            // ADD MOTOR DATA ACTIONS
+            AdminSectionTitle("Add Motor Data")
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 QuickActionButton(
-                    text = "Add 1-Phase",
+                    text = "Add Single Phase",
                     icon = Icons.Rounded.FlashOn,
                     color = Color(0xFF8B5CF6),
                     onClick = { navController.navigate("add_edit_motor/single/new") },
                     modifier = Modifier.weight(1f)
                 )
                 QuickActionButton(
-                    text = "Add 3-Phase",
+                    text = "Add 3 Phase",
                     icon = Icons.Rounded.Build,
                     color = Color(0xFF10B981),
                     onClick = { navController.navigate("add_edit_motor/three/new") },
@@ -162,6 +164,14 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     accentColor = Color(0xFF06B6D4),
                     badgeCount = pendingUsersCount
                 ) { navController.navigate("user_management") }
+
+                PremiumActionCard(
+                    title = "Manage Custom Categories",
+                    subtitle = "Add categories (e.g. Cooler Motor) & custom fields",
+                    icon = Icons.Rounded.Category,
+                    accentColor = Color(0xFF8B5CF6),
+                    badgeCount = customCategories.size
+                ) { navController.navigate("manage_custom_categories") }
             }
             
             Spacer(modifier = Modifier.height(8.dp))
@@ -191,6 +201,11 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
 fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewModel, motorViewModel: MotorViewModel) {
     val context = LocalContext.current
     val currentUser by authViewModel.currentUser.collectAsState()
+    val customCategories by motorViewModel.customCategories.collectAsState()
+
+    LaunchedEffect(Unit) {
+        motorViewModel.loadData()
+    }
     
     Scaffold(
         topBar = {
@@ -245,22 +260,42 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                 ) { navController.navigate("motor_list/my_submissions") }
             }
             
-            AdminSectionTitle("Submit Data")
+            AdminSectionTitle("Add Motor Data")
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 QuickActionButton(
-                    text = "Add 1-Phase",
+                    text = "Single Phase",
                     icon = Icons.Rounded.FlashOn,
                     color = Color(0xFFF59E0B),
                     onClick = { navController.navigate("add_edit_motor/single/new") },
                     modifier = Modifier.weight(1f)
                 )
                 QuickActionButton(
-                    text = "Add 3-Phase",
+                    text = "3 Phase",
                     icon = Icons.Rounded.Build,
                     color = Color(0xFF10B981),
                     onClick = { navController.navigate("add_edit_motor/three/new") },
                     modifier = Modifier.weight(1f)
                 )
+            }
+
+            val submittableCategories = customCategories.filter { it.allowPublicSubmissions }
+            if (submittableCategories.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                AdminSectionTitle("Add Custom Category Motor Data")
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    submittableCategories.forEach { cat ->
+                        OutlinedButton(
+                            onClick = { navController.navigate("add_edit_custom_motor/${cat.id}/new") },
+                            modifier = Modifier.fillMaxWidth().height(50.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Add ${cat.name} Data", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
             
             Spacer(modifier = Modifier.height(32.dp))

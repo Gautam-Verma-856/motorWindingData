@@ -10,25 +10,38 @@ import kotlinx.coroutines.tasks.await
 class AuthRepository {
     private val auth = FirebaseAuth.getInstance()
     private val db = FirebaseFirestore.getInstance()
-    val currentUser = auth.currentUser
+    val currentUser get() = auth.currentUser
 
     suspend fun login(email: String, password: String): Result<User> {
-        Log.d("AuthDebug", "Firebase Project ID: ${auth.app.options.projectId}")
-        Log.d("AuthDebug", "Firebase App ID: ${auth.app.options.applicationId}")
         Log.d("AuthDebug", "Attempting login with email length: ${email.trim().length}, password length: ${password.length}")
         
         return try {
             val res = auth.signInWithEmailAndPassword(email.trim(), password).await()
-            Log.d("AuthDebug", "Firebase auth succeeded for email: ${res.user?.email}, uid: ${res.user?.uid}")
-            val uid = res.user?.uid ?: throw Exception("User ID not found")
+            val firebaseUser = res.user ?: throw Exception("User ID not found")
+            val uid = firebaseUser.uid
             
             val userDoc = db.collection("users").document(uid).get().await()
             if (userDoc.exists()) {
-                val user = userDoc.toObject(User::class.java)!!
+                var user = userDoc.toObject(User::class.java)!!
+
+                // Enforce email verification for Public users
+                if (user.role == "public") {
+                    if (!firebaseUser.isEmailVerified) {
+                        auth.signOut()
+                        return Result.failure(Exception("Email Not Verified: Please verify your email before logging in. Check your inbox for the verification link."))
+                    } else if (!user.emailVerified) {
+                        // Mark email as verified in Firestore
+                        try {
+                            db.collection("users").document(uid).update("emailVerified", true).await()
+                            user = user.copy(emailVerified = true)
+                        } catch (_: Exception) {}
+                    }
+                }
+
                 when (user.accountStatus) {
                     "pending" -> {
                         auth.signOut()
-                        Result.failure(Exception("Account Pending Approval: Your account has been created but is waiting for Admin approval."))
+                        Result.failure(Exception("Account Pending Approval: Your email is verified, but your account is waiting for Admin approval."))
                     }
                     "rejected" -> {
                         auth.signOut()
@@ -61,14 +74,26 @@ class AuthRepository {
         val trimmedEmail = email.trim()
         return try {
             val res = auth.createUserWithEmailAndPassword(trimmedEmail, pass).await()
-            val uid = res.user?.uid ?: throw Exception("User ID not found")
+            val firebaseUser = res.user ?: throw Exception("User ID not found")
+            val uid = firebaseUser.uid
+
+            // Send Firebase email verification immediately
+            try {
+                firebaseUser.sendEmailVerification().await()
+            } catch (e: Exception) {
+                Log.e("AuthDebug", "Failed to send verification email: ${e.message}")
+            }
+
             val user = User(
                 id = uid,
-                name = name,
+                name = name.trim(),
                 email = trimmedEmail,
-                mobile = mobile,
+                mobile = mobile.trim(),
                 role = "public",
-                accountStatus = "pending"
+                accountStatus = "pending",
+                createdAt = System.currentTimeMillis(),
+                phoneVerified = false,
+                emailVerified = false
             )
             db.collection("users").document(uid).set(user).await()
             Result.success(user)
@@ -81,6 +106,42 @@ class AuthRepository {
             } else {
                 Result.failure(e)
             }
+        }
+    }
+
+    suspend fun checkCurrentUserEmailVerification(): Result<Boolean> {
+        return try {
+            val user = auth.currentUser ?: return Result.failure(Exception("No active user session."))
+            user.reload().await()
+            val isVerified = user.isEmailVerified
+            if (isVerified) {
+                db.collection("users").document(user.uid).update("emailVerified", true).await()
+            }
+            Result.success(isVerified)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun resendVerificationEmail(): Result<Unit> {
+        return try {
+            val user = auth.currentUser ?: return Result.failure(Exception("No active user session."))
+            user.sendEmailVerification().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun resendVerificationEmailForCredentials(email: String, pass: String): Result<Unit> {
+        return try {
+            val res = auth.signInWithEmailAndPassword(email.trim(), pass).await()
+            res.user?.sendEmailVerification()?.await()
+            auth.signOut()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            auth.signOut()
+            Result.failure(e)
         }
     }
 

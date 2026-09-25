@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -73,6 +74,9 @@ fun AddEditMotorScreen(
     var weight by remember { mutableStateOf("") }
     
     var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var existingCreatedBy by remember { mutableStateOf("") }
+    var existingCreatedByName by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf(if (type == "single") "Self Priming (Tullu Pump)" else "Monoblock") }
     var isUploading by remember { mutableStateOf(false) }
     var uploadProgress by remember { mutableStateOf(0) }
     var totalUploads by remember { mutableStateOf(0) }
@@ -92,6 +96,11 @@ fun AddEditMotorScreen(
                 val motor = singlePhaseMotors.find { it.id == id }
                 if (motor != null) {
                     existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
+                    existingCreatedBy = motor.createdBy
+                    existingCreatedByName = motor.createdByName
+                    if (motor.category.isNotEmpty()) {
+                        category = motor.category
+                    }
                     photoUrl = motor.photoUrl
                     companyName = motor.companyName
                     hp = motor.hp
@@ -109,6 +118,11 @@ fun AddEditMotorScreen(
                 val motor = threePhaseMotors.find { it.id == id }
                 if (motor != null) {
                     existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
+                    existingCreatedBy = motor.createdBy
+                    existingCreatedByName = motor.createdByName
+                    if (motor.category.isNotEmpty()) {
+                        category = motor.category
+                    }
                     photoUrl = motor.photoUrl
                     companyName = motor.name
                     slot = motor.slot
@@ -216,11 +230,52 @@ fun AddEditMotorScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(if (displayUrls.isEmpty()) "Upload Photos (Max 6)" else "Replace Photos", fontWeight = FontWeight.Bold)
                     }
+
+                    val safeDiagnostic = remember { motorViewModel.getSafeDiagnostic() }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(
+                                    when (safeDiagnostic.status) {
+                                        com.example.repository.MotorRepository.SafeKeyStatus.KEY_PRESENT -> Color(0xFF2E7D32)
+                                        com.example.repository.MotorRepository.SafeKeyStatus.KEY_LITERAL_PLACEHOLDER -> Color(0xFFED6C02)
+                                        com.example.repository.MotorRepository.SafeKeyStatus.KEY_EMPTY -> Color(0xFFD32F2F)
+                                    },
+                                    CircleShape
+                                )
+                        )
+                        Text(
+                            text = "ImgBB Status: ${safeDiagnostic.status} (length: ${safeDiagnostic.length})",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 
             if (type == "single") {
-                FormSection("Motor Information", Icons.Rounded.Info) {
+                FormSection("Motor Category & Info", Icons.Rounded.Category) {
+                    Text("Select Motor Category *", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    val singleCategories = listOf("Self Priming (Tullu Pump)", "Submersible Motor", "Pandubi", "General / Other Motors")
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        singleCategories.forEach { cat ->
+                            FilterChip(
+                                selected = category == cat,
+                                onClick = { category = cat },
+                                label = { Text(cat, fontWeight = if (category == cat) FontWeight.Bold else FontWeight.Normal) },
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                     PremiumTextField(value = companyName, onValueChange = { companyName = it }, label = "Company Name")
                     PremiumTextField(value = hp, onValueChange = { hp = it }, label = "HP")
                     PremiumTextField(value = capacitor, onValueChange = { capacitor = it }, label = "Capacitor")
@@ -240,7 +295,23 @@ fun AddEditMotorScreen(
                     PremiumTextField(value = startingWeight, onValueChange = { startingWeight = it }, label = "Weight")
                 }
             } else {
-                FormSection("Motor Information", Icons.Rounded.Info) {
+                FormSection("Motor Category & Info", Icons.Rounded.Category) {
+                    Text("Select Motor Category *", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    val threeCategories = listOf("Monoblock", "Submersible", "Pandubi", "General / Other Motors")
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        threeCategories.forEach { cat ->
+                            FilterChip(
+                                selected = category == cat,
+                                onClick = { category = cat },
+                                label = { Text(cat, fontWeight = if (category == cat) FontWeight.Bold else FontWeight.Normal) },
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                     PremiumTextField(value = companyName, onValueChange = { companyName = it }, label = "Motor/Company Name")
                     PremiumTextField(value = slot, onValueChange = { slot = it }, label = "Slot")
                     PremiumTextField(value = hp, onValueChange = { hp = it }, label = "HP")
@@ -258,13 +329,32 @@ fun AddEditMotorScreen(
 
             Button(
                 onClick = {
-                    isUploading = true
+                    if (companyName.isBlank()) {
+                        Toast.makeText(context, if (type == "single") "Please enter Company Name" else "Please enter Motor/Company Name", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+
                     val user = authViewModel.currentUser.value
                     val isPublic = user?.role == "public"
-                    val finalStatus = if (isPublic) "pending" else "approved"
-                    val finalCreatedBy = user?.id ?: "unknown"
-                    
                     val actualId = if (id == "new") "" else id ?: ""
+                    
+                    if (isPublic && actualId.isNotEmpty()) {
+                        Toast.makeText(context, "Permission denied: Public users cannot edit motor data.", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+
+                    isUploading = true
+                    val finalStatus = if (isPublic) "pending" else "approved"
+                    val finalCreatedBy = if (actualId.isNotEmpty() && !isPublic) {
+                        existingCreatedBy.ifEmpty { user?.id ?: "unknown" }
+                    } else {
+                        user?.id ?: "unknown"
+                    }
+                    val finalCreatedByName = if (isPublic) {
+                        user?.name?.ifBlank { "Public User" } ?: "Public User"
+                    } else {
+                        if (actualId.isNotEmpty()) existingCreatedByName else ""
+                    }
 
                     coroutineScope.launch {
                         var finalPhotoUrls = existingPhotoUrls
@@ -291,6 +381,7 @@ fun AddEditMotorScreen(
                         if (type == "single") {
                             val motor = SinglePhaseMotor(
                                 id = actualId,
+                                category = category,
                                 photoUrl = finalPhotoUrls.firstOrNull() ?: photoUrl,
                                 photoUrls = finalPhotoUrls,
                                 companyName = companyName,
@@ -305,12 +396,14 @@ fun AddEditMotorScreen(
                                 startingSwg = startingSwg,
                                 startingWeight = startingWeight,
                                 status = finalStatus,
-                                createdBy = finalCreatedBy
+                                createdBy = finalCreatedBy,
+                                createdByName = finalCreatedByName
                             )
                             motorViewModel.saveSinglePhase(motor)
                         } else {
                             val motor = ThreePhaseMotor(
                                 id = actualId,
+                                category = category,
                                 photoUrl = finalPhotoUrls.firstOrNull() ?: photoUrl,
                                 photoUrls = finalPhotoUrls,
                                 name = companyName,
@@ -321,7 +414,8 @@ fun AddEditMotorScreen(
                                 swg = swg,
                                 weight = weight,
                                 status = finalStatus,
-                                createdBy = finalCreatedBy
+                                createdBy = finalCreatedBy,
+                                createdByName = finalCreatedByName
                             )
                             motorViewModel.saveThreePhase(motor)
                         }
