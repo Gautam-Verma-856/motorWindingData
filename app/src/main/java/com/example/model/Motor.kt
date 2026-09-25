@@ -19,8 +19,12 @@ data class SinglePhaseMotor(
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
     val createdByName: String = "",
-    val status: String = "approved"
-)
+    val status: String = "" // Explicitly approved records will have "approved"
+) {
+    fun isExplicitlyApproved(): Boolean = status.trim().equals("approved", ignoreCase = true)
+    fun isPending(): Boolean = status.trim().equals("pending", ignoreCase = true)
+    fun isRejected(): Boolean = status.trim().equals("rejected", ignoreCase = true)
+}
 
 data class ThreePhaseMotor(
     val id: String = "",
@@ -37,8 +41,12 @@ data class ThreePhaseMotor(
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
     val createdByName: String = "",
-    val status: String = "approved"
-)
+    val status: String = "" // Explicitly approved records will have "approved"
+) {
+    fun isExplicitlyApproved(): Boolean = status.trim().equals("approved", ignoreCase = true)
+    fun isPending(): Boolean = status.trim().equals("pending", ignoreCase = true)
+    fun isRejected(): Boolean = status.trim().equals("rejected", ignoreCase = true)
+}
 
 data class CustomCategoryField(
     val id: String = "",
@@ -74,5 +82,9 @@ data class CustomMotor(
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
     val createdByName: String = "",
-    val status: String = "approved" // "approved", "pending", "rejected"
-)
+    val status: String = "" // "approved", "pending", "rejected"
+) {
+    fun isExplicitlyApproved(): Boolean = status.trim().equals("approved", ignoreCase = true)
+    fun isPending(): Boolean = status.trim().equals("pending", ignoreCase = true)
+    fun isRejected(): Boolean = status.trim().equals("rejected", ignoreCase = true)
+}

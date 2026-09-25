@@ -168,11 +168,11 @@ fun MotorListScreen(
         val categoriesList = if (type == "single") singleCategories else threeCategories
         val isSingle = type == "single"
 
-        // Check if there are legacy motors with blank or other categories
+        // Check if there are legacy motors with blank or other categories (must be explicitly approved)
         val legacyMotorsCount = if (isSingle) {
-            singlePhaseMotors.count { it.category.isBlank() || it.category !in singleCategories }
+            singlePhaseMotors.count { it.isExplicitlyApproved() && (it.category.isBlank() || it.category !in singleCategories) }
         } else {
-            threePhaseMotors.count { it.category.isBlank() || it.category !in threeCategories }
+            threePhaseMotors.count { it.isExplicitlyApproved() && (it.category.isBlank() || it.category !in threeCategories) }
         }
 
         Scaffold(
@@ -228,11 +228,11 @@ fun MotorListScreen(
 
                 items(categoriesList) { cat ->
                     val (count, compCount) = if (isSingle) {
-                        val matching = singlePhaseMotors.filter { it.category.equals(cat, ignoreCase = true) }
+                        val matching = singlePhaseMotors.filter { it.isExplicitlyApproved() && it.category.equals(cat, ignoreCase = true) }
                         val comps = matching.map { it.companyName.trim().lowercase() }.filter { it.isNotEmpty() }.distinct().size
                         Pair(matching.size, comps)
                     } else {
-                        val matching = threePhaseMotors.filter { it.category.equals(cat, ignoreCase = true) }
+                        val matching = threePhaseMotors.filter { it.isExplicitlyApproved() && it.category.equals(cat, ignoreCase = true) }
                         val comps = matching.map { it.name.trim().lowercase() }.filter { it.isNotEmpty() }.distinct().size
                         Pair(matching.size, comps)
                     }
@@ -304,21 +304,32 @@ fun MotorListScreen(
     }
 
     // Pre-calculate motors matching the selected category (if applicable)
+    // For Single and Three Phase browsing, ONLY explicitly approved motors are included
     val singleInCategory = remember(singlePhaseMotors, selectedCategory, type) {
-        if (type != "single" || selectedCategory == null) singlePhaseMotors
-        else if (selectedCategory == "General / Other Motors") {
-            singlePhaseMotors.filter { it.category.isBlank() || it.category !in singleCategories }
+        val baseList = if (type == "single") {
+            singlePhaseMotors.filter { it.isExplicitlyApproved() }
         } else {
-            singlePhaseMotors.filter { it.category.equals(selectedCategory, ignoreCase = true) }
+            singlePhaseMotors
+        }
+        if (type != "single" || selectedCategory == null) baseList
+        else if (selectedCategory == "General / Other Motors") {
+            baseList.filter { it.category.isBlank() || it.category !in singleCategories }
+        } else {
+            baseList.filter { it.category.equals(selectedCategory, ignoreCase = true) }
         }
     }
 
     val threeInCategory = remember(threePhaseMotors, selectedCategory, type) {
-        if (type != "three" || selectedCategory == null) threePhaseMotors
-        else if (selectedCategory == "General / Other Motors") {
-            threePhaseMotors.filter { it.category.isBlank() || it.category !in threeCategories }
+        val baseList = if (type == "three") {
+            threePhaseMotors.filter { it.isExplicitlyApproved() }
         } else {
-            threePhaseMotors.filter { it.category.equals(selectedCategory, ignoreCase = true) }
+            threePhaseMotors
+        }
+        if (type != "three" || selectedCategory == null) baseList
+        else if (selectedCategory == "General / Other Motors") {
+            baseList.filter { it.category.isBlank() || it.category !in threeCategories }
+        } else {
+            baseList.filter { it.category.equals(selectedCategory, ignoreCase = true) }
         }
     }
 
@@ -449,14 +460,18 @@ fun MotorListScreen(
                 }
             }
 
+            // Resolved current user UID for My Submissions matching
+            val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+            val targetUserId = currentUserId?.ifBlank { authUid } ?: authUid
+
             // FILTER LIST ITEMS
             val filteredSingle = singleInCategory.filter { motor ->
                 val matchesType = when (type) {
-                    "single" -> true
-                    "approved" -> motor.status == "approved"
-                    "pending" -> motor.status == "pending"
-                    "my_submissions" -> motor.createdBy == currentUserId
-                    else -> true
+                    "single" -> motor.isExplicitlyApproved()
+                    "approved" -> motor.isExplicitlyApproved()
+                    "pending" -> motor.isPending()
+                    "my_submissions" -> (targetUserId.isNotEmpty() && motor.createdBy == targetUserId)
+                    else -> motor.isExplicitlyApproved()
                 }
                 val matchesCompany = selectedCompany == "All" || motor.companyName.equals(selectedCompany, ignoreCase = true)
                 val matchesSearch = searchQuery.isBlank() ||
@@ -469,11 +484,11 @@ fun MotorListScreen(
 
             val filteredThree = threeInCategory.filter { motor ->
                 val matchesType = when (type) {
-                    "three" -> true
-                    "approved" -> motor.status == "approved"
-                    "pending" -> motor.status == "pending"
-                    "my_submissions" -> motor.createdBy == currentUserId
-                    else -> true
+                    "three" -> motor.isExplicitlyApproved()
+                    "approved" -> motor.isExplicitlyApproved()
+                    "pending" -> motor.isPending()
+                    "my_submissions" -> (targetUserId.isNotEmpty() && motor.createdBy == targetUserId)
+                    else -> motor.isExplicitlyApproved()
                 }
                 val matchesCompany = selectedCompany == "All" || motor.name.equals(selectedCompany, ignoreCase = true)
                 val matchesSearch = searchQuery.isBlank() ||
@@ -486,9 +501,9 @@ fun MotorListScreen(
 
             val filteredCustom = customMotors.filter { motor ->
                 val matchesType = when (type) {
-                    "approved" -> motor.status == "approved"
-                    "pending" -> motor.status == "pending"
-                    "my_submissions" -> motor.createdBy == currentUserId
+                    "approved" -> motor.isExplicitlyApproved()
+                    "pending" -> motor.isPending()
+                    "my_submissions" -> (targetUserId.isNotEmpty() && motor.createdBy == targetUserId)
                     else -> false
                 }
                 val matchesSearch = searchQuery.isBlank() ||
@@ -1026,34 +1041,7 @@ fun PremiumThreePhaseMotorCard(
 
 @Composable
 fun StatusBadge(status: String) {
-    val color = when (status.lowercase()) {
-        "approved" -> Color(0xFF10B981)
-        "pending" -> Color(0xFFF59E0B)
-        "rejected" -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    val icon = when (status.lowercase()) {
-        "approved" -> Icons.Rounded.CheckCircle
-        "pending" -> Icons.Rounded.HourglassEmpty
-        "rejected" -> Icons.Rounded.Block
-        else -> Icons.Rounded.Info
-    }
-
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = color.copy(alpha = 0.15f),
-        modifier = Modifier.padding(start = 8.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(12.dp))
-            Spacer(Modifier.width(4.dp))
-            Text(status.uppercase(), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = color)
-        }
-    }
+    com.example.ui.components.StatusBadge(status = status)
 }
 
 @Composable

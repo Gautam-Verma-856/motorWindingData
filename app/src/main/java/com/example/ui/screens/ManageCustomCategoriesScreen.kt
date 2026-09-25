@@ -64,7 +64,7 @@ fun ManageCustomCategoriesScreen(
     var categoryToDelete by remember { mutableStateOf<CustomCategory?>(null) }
 
     LaunchedEffect(Unit) {
-        motorViewModel.loadData()
+        motorViewModel.loadData(isAdmin = true)
     }
 
     if (uiState is UiState.Loading) {

@@ -38,13 +38,27 @@ class MotorViewModel : ViewModel() {
     
     private val _isLoadingData = MutableStateFlow(false)
     val isLoadingData = _isLoadingData.asStateFlow()
-    
-    fun loadData() {
+
+    fun clearData() {
+        _singlePhaseMotors.value = emptyList()
+        _threePhaseMotors.value = emptyList()
+        _customCategories.value = emptyList()
+        _customMotors.value = emptyList()
+        _uiState.value = UiState.Idle
+        _isLoadingData.value = false
+    }
+
+    fun loadData(isAdmin: Boolean = false) {
+        val currentFirebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (currentFirebaseUser == null) {
+            clearData()
+            return
+        }
         viewModelScope.launch {
             _isLoadingData.value = true
             repo.getSinglePhaseMotors().onSuccess { _singlePhaseMotors.value = it }
             repo.getThreePhaseMotors().onSuccess { _threePhaseMotors.value = it }
-            repo.getCustomCategories().onSuccess { _customCategories.value = it }
+            repo.getCustomCategories(isAdmin).onSuccess { _customCategories.value = it }
             repo.getCustomMotors().onSuccess { _customMotors.value = it }
             _isLoadingData.value = false
         }
@@ -105,10 +119,15 @@ class MotorViewModel : ViewModel() {
     fun updateSinglePhaseStatus(id: String, status: String) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
+            // Optimistically update local list so UI immediately reflects the new status
+            _singlePhaseMotors.value = _singlePhaseMotors.value.map {
+                if (it.id == id) it.copy(status = status) else it
+            }
             repo.updateSinglePhaseStatus(id, status).onSuccess {
                 loadData()
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
+                loadData()
                 _uiState.value = UiState.Error(it.message ?: "Failed to update status")
             }
         }
@@ -117,10 +136,15 @@ class MotorViewModel : ViewModel() {
     fun updateThreePhaseStatus(id: String, status: String) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
+            // Optimistically update local list so UI immediately reflects the new status
+            _threePhaseMotors.value = _threePhaseMotors.value.map {
+                if (it.id == id) it.copy(status = status) else it
+            }
             repo.updateThreePhaseStatus(id, status).onSuccess {
                 loadData()
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
+                loadData()
                 _uiState.value = UiState.Error(it.message ?: "Failed to update status")
             }
         }
@@ -131,7 +155,7 @@ class MotorViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             repo.saveCustomCategory(category).onSuccess {
-                loadData()
+                loadData(isAdmin = true)
                 _uiState.value = UiState.Success("save_category")
             }.onFailure {
                 _uiState.value = UiState.Error(it.message ?: "Failed to save category")
@@ -143,7 +167,7 @@ class MotorViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             repo.deleteCustomCategory(id).onSuccess {
-                loadData()
+                loadData(isAdmin = true)
                 _uiState.value = UiState.Success("delete_category")
             }.onFailure {
                 _uiState.value = UiState.Error(it.message ?: "Failed to delete category")
@@ -179,12 +203,32 @@ class MotorViewModel : ViewModel() {
     fun updateCustomMotorStatus(id: String, status: String) {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
+            // Optimistically update local list so UI immediately reflects the new status
+            _customMotors.value = _customMotors.value.map {
+                if (it.id == id) it.copy(status = status) else it
+            }
             repo.updateCustomMotorStatus(id, status).onSuccess {
                 loadData()
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
+                loadData()
                 _uiState.value = UiState.Error(it.message ?: "Failed to update status")
             }
+        }
+    }
+
+    // Explicitly approved getters for public browsing
+    fun getApprovedSinglePhaseMotors(): List<SinglePhaseMotor> {
+        return _singlePhaseMotors.value.filter { it.isExplicitlyApproved() }
+    }
+
+    fun getApprovedThreePhaseMotors(): List<ThreePhaseMotor> {
+        return _threePhaseMotors.value.filter { it.isExplicitlyApproved() }
+    }
+
+    fun getApprovedCustomMotors(categoryId: String? = null): List<CustomMotor> {
+        return _customMotors.value.filter {
+            it.isExplicitlyApproved() && (categoryId == null || it.categoryId == categoryId)
         }
     }
     

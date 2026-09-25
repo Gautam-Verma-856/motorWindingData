@@ -24,6 +24,33 @@ class AuthRepository {
             if (userDoc.exists()) {
                 var user = userDoc.toObject(User::class.java)!!
 
+                // Handle admin role and ensure active status in Firestore
+                if (user.role.equals("admin", ignoreCase = true)) {
+                    var needsUpdate = false
+                    val updates = mutableMapOf<String, Any>()
+                    if (!user.accountStatus.equals("active", ignoreCase = true)) {
+                        updates["accountStatus"] = "active"
+                        user = user.copy(accountStatus = "active")
+                        needsUpdate = true
+                    }
+                    if (user.id != uid) {
+                        updates["id"] = uid
+                        user = user.copy(id = uid)
+                        needsUpdate = true
+                    }
+                    if (user.role != "admin") {
+                        updates["role"] = "admin"
+                        user = user.copy(role = "admin")
+                        needsUpdate = true
+                    }
+                    if (needsUpdate) {
+                        try {
+                            db.collection("users").document(uid).update(updates).await()
+                        } catch (_: Exception) {}
+                    }
+                    return Result.success(user)
+                }
+
                 // Enforce email verification for Public users
                 if (user.role == "public") {
                     if (!firebaseUser.isEmailVerified) {
@@ -38,7 +65,7 @@ class AuthRepository {
                     }
                 }
 
-                when (user.accountStatus) {
+                when (user.accountStatus.lowercase()) {
                     "pending" -> {
                         auth.signOut()
                         Result.failure(Exception("Account Pending Approval: Your email is verified, but your account is waiting for Admin approval."))
@@ -153,7 +180,32 @@ class AuthRepository {
         val uid = auth.currentUser?.uid ?: return null
         return try {
             val doc = db.collection("users").document(uid).get().await()
-            doc.toObject(User::class.java)
+            var user = doc.toObject(User::class.java) ?: return null
+            if (user.role.equals("admin", ignoreCase = true)) {
+                var needsUpdate = false
+                val updates = mutableMapOf<String, Any>()
+                if (!user.accountStatus.equals("active", ignoreCase = true)) {
+                    updates["accountStatus"] = "active"
+                    user = user.copy(accountStatus = "active")
+                    needsUpdate = true
+                }
+                if (user.id != uid) {
+                    updates["id"] = uid
+                    user = user.copy(id = uid)
+                    needsUpdate = true
+                }
+                if (user.role != "admin") {
+                    updates["role"] = "admin"
+                    user = user.copy(role = "admin")
+                    needsUpdate = true
+                }
+                if (needsUpdate) {
+                    try {
+                        db.collection("users").document(uid).update(updates).await()
+                    } catch (_: Exception) {}
+                }
+            }
+            user
         } catch (e: Exception) {
             null
         }

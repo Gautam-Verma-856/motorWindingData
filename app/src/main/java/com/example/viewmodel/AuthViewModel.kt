@@ -45,22 +45,36 @@ class AuthViewModel : ViewModel() {
     private val _isFetchingUsers = MutableStateFlow(false)
     val isFetchingUsers = _isFetchingUsers.asStateFlow()
 
+    private val _isSessionChecking = MutableStateFlow(true)
+    val isSessionChecking = _isSessionChecking.asStateFlow()
+
     init {
         checkSession()
     }
 
     private fun checkSession() {
         viewModelScope.launch {
-            val user = repo.fetchCurrentUserProfile()
-            if (user != null) {
-                if (user.role == "public" && user.accountStatus != "active") {
-                    repo.logout()
+            _isSessionChecking.value = true
+            try {
+                val user = repo.fetchCurrentUserProfile()
+                if (user != null) {
+                    if (user.role == "public" && user.accountStatus != "active") {
+                        repo.logout()
+                        _currentUser.value = null
+                        _authState.value = AuthState.Idle
+                    } else {
+                        _currentUser.value = user
+                        _authState.value = AuthState.Success(user)
+                    }
+                } else {
                     _currentUser.value = null
                     _authState.value = AuthState.Idle
-                } else {
-                    _currentUser.value = user
-                    _authState.value = AuthState.Success(user)
                 }
+            } catch (_: Exception) {
+                _currentUser.value = null
+                _authState.value = AuthState.Idle
+            } finally {
+                _isSessionChecking.value = false
             }
         }
     }

@@ -216,7 +216,9 @@ class MotorRepository {
     suspend fun saveSinglePhaseMotor(motor: SinglePhaseMotor): Result<Unit> {
         return try {
             val id = motor.id.ifEmpty { db.collection("single_phase_motors").document().id }
-            db.collection("single_phase_motors").document(id).set(motor.copy(id = id)).await()
+            val statusToSave = motor.status.ifBlank { "pending" }
+            val motorToSave = motor.copy(id = id, status = statusToSave)
+            db.collection("single_phase_motors").document(id).set(motorToSave).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -224,9 +226,27 @@ class MotorRepository {
     }
 
     suspend fun getSinglePhaseMotors(): Result<List<SinglePhaseMotor>> {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
         return try {
             val query = db.collection("single_phase_motors").get().await()
             Result.success(query.toObjects(SinglePhaseMotor::class.java))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getApprovedSinglePhaseMotors(): Result<List<SinglePhaseMotor>> {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
+        return try {
+            val query = db.collection("single_phase_motors")
+                .whereEqualTo("status", "approved")
+                .get().await()
+            val list = query.toObjects(SinglePhaseMotor::class.java).filter { it.isExplicitlyApproved() }
+            Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -253,7 +273,9 @@ class MotorRepository {
     suspend fun saveThreePhaseMotor(motor: ThreePhaseMotor): Result<Unit> {
         return try {
             val id = motor.id.ifEmpty { db.collection("three_phase_motors").document().id }
-            db.collection("three_phase_motors").document(id).set(motor.copy(id = id)).await()
+            val statusToSave = motor.status.ifBlank { "pending" }
+            val motorToSave = motor.copy(id = id, status = statusToSave)
+            db.collection("three_phase_motors").document(id).set(motorToSave).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -261,9 +283,27 @@ class MotorRepository {
     }
 
     suspend fun getThreePhaseMotors(): Result<List<ThreePhaseMotor>> {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
         return try {
             val query = db.collection("three_phase_motors").get().await()
             Result.success(query.toObjects(ThreePhaseMotor::class.java))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getApprovedThreePhaseMotors(): Result<List<ThreePhaseMotor>> {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
+        return try {
+            val query = db.collection("three_phase_motors")
+                .whereEqualTo("status", "approved")
+                .get().await()
+            val list = query.toObjects(ThreePhaseMotor::class.java).filter { it.isExplicitlyApproved() }
+            Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -289,25 +329,52 @@ class MotorRepository {
 
     // --- Custom Category Methods ---
     suspend fun saveCustomCategory(category: CustomCategory): Result<Unit> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (authUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
         return try {
             val id = category.id.ifEmpty { db.collection("custom_categories").document().id }
-            db.collection("custom_categories").document(id).set(category.copy(id = id)).await()
+            val currentUid = authUser.uid
+            val categoryToSave = category.copy(
+                id = id,
+                createdBy = category.createdBy.ifEmpty { currentUid },
+                createdAt = if (category.createdAt == 0L) System.currentTimeMillis() else category.createdAt
+            )
+            db.collection("custom_categories").document(id).set(categoryToSave).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun getCustomCategories(): Result<List<CustomCategory>> {
+    suspend fun getCustomCategories(isAdmin: Boolean = false): Result<List<CustomCategory>> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (authUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
         return try {
-            val query = db.collection("custom_categories").get().await()
+            val query = if (isAdmin) {
+                db.collection("custom_categories").get().await()
+            } else {
+                db.collection("custom_categories").whereEqualTo("isActive", true).get().await()
+            }
             Result.success(query.toObjects(CustomCategory::class.java))
         } catch (e: Exception) {
-            Result.failure(e)
+            try {
+                val query = db.collection("custom_categories").whereEqualTo("isActive", true).get().await()
+                Result.success(query.toObjects(CustomCategory::class.java))
+            } catch (_: Exception) {
+                Result.failure(e)
+            }
         }
     }
 
     suspend fun deleteCustomCategory(id: String): Result<Unit> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (authUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
         return try {
             db.collection("custom_categories").document(id).delete().await()
             Result.success(Unit)
@@ -318,9 +385,20 @@ class MotorRepository {
 
     // --- Custom Motor Methods ---
     suspend fun saveCustomMotor(motor: CustomMotor): Result<Unit> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (authUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
         return try {
             val id = motor.id.ifEmpty { db.collection("custom_motors").document().id }
-            db.collection("custom_motors").document(id).set(motor.copy(id = id)).await()
+            val currentUid = authUser.uid
+            val statusToSave = motor.status.ifBlank { "pending" }
+            val motorToSave = motor.copy(
+                id = id,
+                status = statusToSave,
+                createdBy = motor.createdBy.ifEmpty { currentUid }
+            )
+            db.collection("custom_motors").document(id).set(motorToSave).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -328,9 +406,30 @@ class MotorRepository {
     }
 
     suspend fun getCustomMotors(): Result<List<CustomMotor>> {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
         return try {
             val query = db.collection("custom_motors").get().await()
             Result.success(query.toObjects(CustomMotor::class.java))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getApprovedCustomMotors(categoryId: String? = null): Result<List<CustomMotor>> {
+        if (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
+        return try {
+            var query = db.collection("custom_motors")
+                .whereEqualTo("status", "approved")
+            if (!categoryId.isNullOrBlank()) {
+                query = query.whereEqualTo("categoryId", categoryId)
+            }
+            val snapshot = query.get().await()
+            val list = snapshot.toObjects(CustomMotor::class.java).filter { it.isExplicitlyApproved() }
+            Result.success(list)
         } catch (e: Exception) {
             Result.failure(e)
         }

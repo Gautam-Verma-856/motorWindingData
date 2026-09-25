@@ -180,7 +180,8 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                 onClick = {
                     Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
                     authViewModel.logout()
-                    navController.navigate("home") { popUpTo(0) }
+                    motorViewModel.clearData()
+                    navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 shape = RoundedCornerShape(16.dp),
@@ -203,8 +204,15 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
     val currentUser by authViewModel.currentUser.collectAsState()
     val customCategories by motorViewModel.customCategories.collectAsState()
 
+    if (currentUser == null) {
+        LaunchedEffect(Unit) {
+            navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
+        }
+        return
+    }
+
     LaunchedEffect(Unit) {
-        motorViewModel.loadData()
+        motorViewModel.loadData(isAdmin = false)
     }
     
     Scaffold(
@@ -224,7 +232,8 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                     IconButton(onClick = {
                         Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
                         authViewModel.logout()
-                        navController.navigate("home") { popUpTo(0) }
+                        motorViewModel.clearData()
+                        navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
                     }) {
                         Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.error)
                     }
@@ -250,6 +259,14 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                     accentColor = MaterialTheme.colorScheme.primary,
                     badgeCount = 0
                 ) { navController.navigate("motor_list/approved") }
+
+                PremiumActionCard(
+                    title = "Browse Categories",
+                    subtitle = "Explore Single Phase, 3 Phase & Custom categories",
+                    icon = Icons.Rounded.Category,
+                    accentColor = Color(0xFF06B6D4),
+                    badgeCount = 0
+                ) { navController.navigate("home") }
                 
                 PremiumActionCard(
                     title = "My Submissions",
@@ -298,6 +315,23 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                 }
             }
             
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = {
+                    Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
+                    authViewModel.logout()
+                    motorViewModel.clearData()
+                    navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
+                },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Logout", fontWeight = FontWeight.Bold)
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
         }
     }

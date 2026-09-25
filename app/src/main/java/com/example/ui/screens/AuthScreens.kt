@@ -226,11 +226,11 @@ fun AdminLoginScreen(navController: NavController, authViewModel: AuthViewModel)
         when (authState) {
             is AuthState.Success -> {
                 val user = (authState as AuthState.Success).user
-                if (user.role == "admin") {
+                if (user.role.equals("admin", ignoreCase = true)) {
                     showSuccess = true
                     delay(800)
                     navController.navigate("admin_dashboard") {
-                        popUpTo("home") { inclusive = false }
+                        popUpTo("public_login") { inclusive = true }
                     }
                     showSuccess = false
                 } else {
@@ -386,10 +386,17 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
     LaunchedEffect(authState) {
         when (authState) {
             is AuthState.Success -> {
+                val user = (authState as AuthState.Success).user
                 showSuccess = true
                 delay(800)
-                navController.navigate("user_dashboard") {
-                    popUpTo("home") { inclusive = false }
+                if (user.role.equals("admin", ignoreCase = true)) {
+                    navController.navigate("admin_dashboard") {
+                        popUpTo("public_login") { inclusive = true }
+                    }
+                } else {
+                    navController.navigate("user_dashboard") {
+                        popUpTo("public_login") { inclusive = true }
+                    }
                 }
                 showSuccess = false
             }
@@ -463,8 +470,10 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
         TopAppBar(
             title = { Text("") },
             navigationIcon = {
-                IconButton(onClick = { navController.navigateUp() }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                if (navController.previousBackStackEntry != null) {
+                    IconButton(onClick = { navController.navigateUp() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -537,9 +546,22 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
                     showSuccess = showSuccess
                 )
                 
-                Spacer(modifier = Modifier.height(24.dp))
-                TextButton(onClick = { navController.navigate("public_register") }) {
-                    Text("Create Account", color = Color(0xFF06B6D4), fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(20.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = { navController.navigate("public_register") }) {
+                        Text("Create Account", color = Color(0xFF06B6D4), fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = { navController.navigate("admin_login") }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Admin Login", color = Color.White.copy(alpha = 0.9f), fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
         }

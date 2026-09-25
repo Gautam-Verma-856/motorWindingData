@@ -127,7 +127,14 @@ fun CustomMotorListScreen(
     }
 
     // Filter motors belonging to this category
-    val categoryMotors = customMotors.filter { it.categoryId == categoryId }
+    // In public browsing (role != "admin"), only explicitly approved records are included
+    val categoryMotors = remember(customMotors, categoryId, role) {
+        if (role == "admin") {
+            customMotors.filter { it.categoryId == categoryId }
+        } else {
+            customMotors.filter { it.categoryId == categoryId && it.isExplicitlyApproved() }
+        }
+    }
 
     // Dynamic list of unique companies sorted alphabetically
     val companies = remember(categoryMotors) {
@@ -151,8 +158,7 @@ fun CustomMotorListScreen(
         val isAuthorizedToSee = if (role == "admin") {
             true
         } else {
-            // Public user sees approved ones OR their own pending ones
-            motor.status == "approved" || (currentUser != null && motor.createdBy == currentUser.id)
+            motor.isExplicitlyApproved()
         }
 
         matchesCompany && matchesSearch && isAuthorizedToSee
@@ -367,22 +373,8 @@ fun CustomMotorCard(
                     }
                 }
 
-                // STATUS CHIP
-                if (motor.status == "pending") {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFF59E0B).copy(alpha = 0.15f)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Icon(Icons.Rounded.HourglassEmpty, contentDescription = null, tint = Color(0xFFD97706), modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Pending", style = MaterialTheme.typography.labelSmall, color = Color(0xFFD97706), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
+                // STATUS BADGE
+                com.example.ui.components.StatusBadge(motor.status)
             }
 
             Spacer(modifier = Modifier.height(10.dp))

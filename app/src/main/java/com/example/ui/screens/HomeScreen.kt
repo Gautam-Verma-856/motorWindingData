@@ -82,6 +82,15 @@ fun HomeScreen(
     motorViewModel: com.example.viewmodel.MotorViewModel? = null,
     onLogout: () -> Unit
 ) {
+    if (currentUser == null) {
+        LaunchedEffect(Unit) {
+            navController.navigate("public_login") {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+        return
+    }
+
     val customCategories = motorViewModel?.customCategories?.collectAsState()?.value ?: emptyList()
     var headerVisible by remember { mutableStateOf(false) }
     var cardsVisible by remember { mutableStateOf(false) }
@@ -90,7 +99,7 @@ fun HomeScreen(
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
-        motorViewModel?.loadData()
+        motorViewModel?.loadData(isAdmin = currentUser.role == "admin")
         headerVisible = true
         delay(100)
         cardsVisible = true
@@ -124,22 +133,8 @@ fun HomeScreen(
                     actions = {
                         var menuExpanded by remember { mutableStateOf(false) }
                         
-                        if (currentUser == null) {
-                            // Minimal top-right Lock icon for Admin Login
-                            IconButton(
-                                onClick = { navController.navigate("admin_login") }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Lock,
-                                    contentDescription = "Admin Login",
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        } else {
-                            IconButton(onClick = onLogout) {
-                                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.error)
-                            }
+                        IconButton(onClick = onLogout) {
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.error)
                         }
                         
                         IconButton(onClick = { menuExpanded = true }) {
@@ -189,28 +184,15 @@ fun HomeScreen(
                                     leadingIcon = { Icon(Icons.Rounded.Phone, contentDescription = null, tint = Color(0xFF25D366)) }
                                 )
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                                if (currentUser == null) {
-                                    DropdownMenuItem(
-                                        text = { Text("Public Login") },
-                                        onClick = { menuExpanded = false; navController.navigate("public_login") },
-                                        leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = Color(0xFF06B6D4)) }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Admin Login") },
-                                        onClick = { menuExpanded = false; navController.navigate("admin_login") },
-                                        leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-                                    )
-                                } else {
-                                    DropdownMenuItem(
-                                        text = { Text("Dashboard") },
-                                        onClick = { 
-                                            menuExpanded = false
-                                            if (currentUser.role == "admin") navController.navigate("admin_dashboard")
-                                            else navController.navigate("user_dashboard") 
-                                        },
-                                        leadingIcon = { Icon(Icons.Rounded.Dashboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-                                    )
-                                }
+                                DropdownMenuItem(
+                                    text = { Text("Dashboard") },
+                                    onClick = { 
+                                        menuExpanded = false
+                                        if (currentUser.role == "admin") navController.navigate("admin_dashboard")
+                                        else navController.navigate("user_dashboard") 
+                                    },
+                                    leadingIcon = { Icon(Icons.Rounded.Dashboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                                )
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                                 Column(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -319,61 +301,30 @@ fun HomeScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (currentUser == null) {
-                        val interactionSource = remember { MutableInteractionSource() }
-                        val isPressed by interactionSource.collectIsPressedAsState()
-                        val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val isPressed by interactionSource.collectIsPressedAsState()
+                    val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
-                        FilledTonalButton(
-                            onClick = { navController.navigate("public_login") },
-                            shape = RoundedCornerShape(50),
-                            interactionSource = interactionSource,
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                            ),
-                            modifier = Modifier
-                                .scale(scale)
-                                .height(48.dp)
-                                .widthIn(min = 200.dp),
-                            elevation = ButtonDefaults.filledTonalButtonElevation(defaultElevation = 2.dp)
-                        ) {
-                            Icon(Icons.Rounded.Person, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Public Login", fontWeight = FontWeight.Bold)
-                        }
-                        
-                        Spacer(modifier = Modifier.height(4.dp))
-                        
-                        TextButton(onClick = { navController.navigate("public_register") }) {
-                            Text("Don't have an account? Register", style = MaterialTheme.typography.bodySmall)
-                        }
-                    } else {
-                        val interactionSource = remember { MutableInteractionSource() }
-                        val isPressed by interactionSource.collectIsPressedAsState()
-                        val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
-
-                        FilledTonalButton(
-                            onClick = {
-                                if (currentUser.role == "admin") navController.navigate("admin_dashboard")
-                                else navController.navigate("user_dashboard")
-                            },
-                            shape = RoundedCornerShape(50),
-                            interactionSource = interactionSource,
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            ),
-                            modifier = Modifier
-                                .scale(scale)
-                                .height(48.dp)
-                                .widthIn(min = 200.dp),
-                            elevation = ButtonDefaults.filledTonalButtonElevation(defaultElevation = 2.dp)
-                        ) {
-                            Icon(Icons.Rounded.Dashboard, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Go to Dashboard", fontWeight = FontWeight.Bold)
-                        }
+                    FilledTonalButton(
+                        onClick = {
+                            if (currentUser.role == "admin") navController.navigate("admin_dashboard")
+                            else navController.navigate("user_dashboard")
+                        },
+                        shape = RoundedCornerShape(50),
+                        interactionSource = interactionSource,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        modifier = Modifier
+                            .scale(scale)
+                            .height(48.dp)
+                            .widthIn(min = 200.dp),
+                        elevation = ButtonDefaults.filledTonalButtonElevation(defaultElevation = 2.dp)
+                    ) {
+                        Icon(Icons.Rounded.Dashboard, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Go to Dashboard", fontWeight = FontWeight.Bold)
                     }
                 }
             }

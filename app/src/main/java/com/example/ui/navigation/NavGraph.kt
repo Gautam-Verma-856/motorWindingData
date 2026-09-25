@@ -1,8 +1,21 @@
 package com.example.ui.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ElectricBolt
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -21,14 +34,86 @@ fun NavGraph() {
 
     val currentUser by authViewModel.currentUser.collectAsState()
 
-    NavHost(navController = navController, startDestination = "home") {
+    NavHost(navController = navController, startDestination = "splash") {
+        composable("splash") {
+            val isSessionChecking by authViewModel.isSessionChecking.collectAsState()
+
+            LaunchedEffect(isSessionChecking, currentUser) {
+                if (!isSessionChecking) {
+                    val user = currentUser
+                    if (user != null) {
+                        if (user.role.equals("admin", ignoreCase = true)) {
+                            motorViewModel.loadData(isAdmin = true)
+                            navController.navigate("admin_dashboard") {
+                                popUpTo("splash") { inclusive = true }
+                            }
+                        } else if (user.role.equals("public", ignoreCase = true) && user.accountStatus.equals("active", ignoreCase = true)) {
+                            motorViewModel.loadData(isAdmin = false)
+                            navController.navigate("user_dashboard") {
+                                popUpTo("splash") { inclusive = true }
+                            }
+                        } else {
+                            authViewModel.logout()
+                            motorViewModel.clearData()
+                            navController.navigate("public_login") {
+                                popUpTo("splash") { inclusive = true }
+                            }
+                        }
+                    } else {
+                        motorViewModel.clearData()
+                        navController.navigate("public_login") {
+                            popUpTo("splash") { inclusive = true }
+                        }
+                    }
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Rounded.ElectricBolt,
+                        contentDescription = null,
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Motor Winding Data",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
         composable("home") {
-            HomeScreen(
-                navController = navController,
-                currentUser = currentUser,
-                motorViewModel = motorViewModel,
-                onLogout = { authViewModel.logout() }
-            )
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                HomeScreen(
+                    navController = navController,
+                    currentUser = currentUser,
+                    motorViewModel = motorViewModel,
+                    onLogout = {
+                        authViewModel.logout()
+                        motorViewModel.clearData()
+                        navController.navigate("public_login") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                )
+            }
         }
         composable("contact") {
             ContactScreen(navController = navController)
@@ -43,37 +128,77 @@ fun NavGraph() {
             PublicRegisterScreen(navController = navController, authViewModel = authViewModel)
         }
         composable("admin_dashboard") {
-            AdminDashboardScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel)
+            if (currentUser == null || !currentUser!!.role.equals("admin", ignoreCase = true)) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                AdminDashboardScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel)
+            }
         }
         composable("user_dashboard") {
-            UserDashboardScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel)
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                UserDashboardScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel)
+            }
         }
         composable("manage_custom_categories") {
-            ManageCustomCategoriesScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel)
+            if (currentUser == null || !currentUser!!.role.equals("admin", ignoreCase = true)) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                ManageCustomCategoriesScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel)
+            }
         }
         composable(
             "custom_motor_list/{categoryId}",
             arguments = listOf(navArgument("categoryId") { type = NavType.StringType })
         ) { backStackEntry ->
-            val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
-            CustomMotorListScreen(
-                navController = navController,
-                motorViewModel = motorViewModel,
-                categoryId = categoryId,
-                currentUser = currentUser
-            )
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
+                CustomMotorListScreen(
+                    navController = navController,
+                    motorViewModel = motorViewModel,
+                    categoryId = categoryId,
+                    currentUser = currentUser
+                )
+            }
         }
         composable(
             "custom_motor_detail/{id}",
             arguments = listOf(navArgument("id") { type = NavType.StringType })
         ) { backStackEntry ->
-            val id = backStackEntry.arguments?.getString("id") ?: ""
-            CustomMotorDetailScreen(
-                navController = navController,
-                motorViewModel = motorViewModel,
-                id = id,
-                role = currentUser?.role ?: "public"
-            )
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val id = backStackEntry.arguments?.getString("id") ?: ""
+                CustomMotorDetailScreen(
+                    navController = navController,
+                    motorViewModel = motorViewModel,
+                    id = id,
+                    role = currentUser?.role ?: "public"
+                )
+            }
         }
         composable(
             "add_edit_custom_motor/{categoryId}/{id}",
@@ -82,28 +207,45 @@ fun NavGraph() {
                 navArgument("id") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
-            val id = backStackEntry.arguments?.getString("id")
-            AddEditCustomMotorScreen(
-                navController = navController,
-                motorViewModel = motorViewModel,
-                categoryId = categoryId,
-                id = id,
-                authViewModel = authViewModel
-            )
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
+                val id = backStackEntry.arguments?.getString("id")
+                AddEditCustomMotorScreen(
+                    navController = navController,
+                    motorViewModel = motorViewModel,
+                    categoryId = categoryId,
+                    id = id,
+                    authViewModel = authViewModel
+                )
+            }
         }
         composable(
             "motor_list/{type}",
             arguments = listOf(navArgument("type") { type = NavType.StringType })
         ) { backStackEntry ->
-            val type = backStackEntry.arguments?.getString("type") ?: "single"
-            MotorListScreen(
-                navController = navController, 
-                motorViewModel = motorViewModel, 
-                type = type, 
-                role = currentUser?.role ?: "public",
-                currentUserId = currentUser?.id
-            )
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val type = backStackEntry.arguments?.getString("type") ?: "single"
+                val currentUid = currentUser?.id?.ifBlank { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid } ?: com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                MotorListScreen(
+                    navController = navController, 
+                    motorViewModel = motorViewModel, 
+                    type = type, 
+                    role = currentUser?.role ?: "public",
+                    currentUserId = currentUid
+                )
+            }
         }
         composable(
             "motor_detail/{type}/{id}",
@@ -112,9 +254,17 @@ fun NavGraph() {
                 navArgument("id") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val type = backStackEntry.arguments?.getString("type") ?: "single"
-            val id = backStackEntry.arguments?.getString("id") ?: ""
-            MotorDetailScreen(navController = navController, motorViewModel = motorViewModel, type = type, id = id, role = currentUser?.role ?: "public")
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val type = backStackEntry.arguments?.getString("type") ?: "single"
+                val id = backStackEntry.arguments?.getString("id") ?: ""
+                MotorDetailScreen(navController = navController, motorViewModel = motorViewModel, type = type, id = id, role = currentUser?.role ?: "public")
+            }
         }
         composable(
             "add_edit_motor/{type}/{id}",
@@ -123,9 +273,17 @@ fun NavGraph() {
                 navArgument("id") { type = NavType.StringType }
             )
         ) { backStackEntry ->
-            val type = backStackEntry.arguments?.getString("type") ?: "single"
-            val id = backStackEntry.arguments?.getString("id")
-            AddEditMotorScreen(navController = navController, motorViewModel = motorViewModel, type = type, id = id, authViewModel = authViewModel)
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val type = backStackEntry.arguments?.getString("type") ?: "single"
+                val id = backStackEntry.arguments?.getString("id")
+                AddEditMotorScreen(navController = navController, motorViewModel = motorViewModel, type = type, id = id, authViewModel = authViewModel)
+            }
         }
         composable(
             "user_management?filter={filter}",
@@ -135,8 +293,16 @@ fun NavGraph() {
                 defaultValue = null
             })
         ) { backStackEntry ->
-            val filter = backStackEntry.arguments?.getString("filter")
-            UserManagementScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel, initialFilter = filter)
+            if (currentUser == null || !currentUser!!.role.equals("admin", ignoreCase = true)) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val filter = backStackEntry.arguments?.getString("filter")
+                UserManagementScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel, initialFilter = filter)
+            }
         }
     }
 }

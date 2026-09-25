@@ -182,33 +182,7 @@ fun CustomMotorDetailScreen(
                                 )
                             }
 
-                            if (motor.status == "pending") {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color(0xFFF59E0B).copy(alpha = 0.15f)
-                                ) {
-                                    Text(
-                                        "Pending Approval",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFFD97706),
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            } else {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color(0xFF10B981).copy(alpha = 0.15f)
-                                ) {
-                                    Text(
-                                        "Verified",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF047857),
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
+                            com.example.ui.components.StatusBadge(motor.status)
                         }
 
                         Text(

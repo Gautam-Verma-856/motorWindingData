@@ -47,6 +47,16 @@ fun AddEditMotorScreen(
     id: String?,
     authViewModel: AuthViewModel
 ) {
+    val currentUser by authViewModel.currentUser.collectAsState()
+    if (currentUser == null) {
+        LaunchedEffect(Unit) {
+            navController.navigate("public_login") {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+        return
+    }
+
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
     val uiState by motorViewModel.uiState.collectAsState()
@@ -76,17 +86,24 @@ fun AddEditMotorScreen(
     var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var existingCreatedBy by remember { mutableStateOf("") }
     var existingCreatedByName by remember { mutableStateOf("") }
+    var existingStatus by remember { mutableStateOf("approved") }
     var category by remember { mutableStateOf(if (type == "single") "Self Priming (Tullu Pump)" else "Monoblock") }
     var isUploading by remember { mutableStateOf(false) }
     var uploadProgress by remember { mutableStateOf(0) }
     var totalUploads by remember { mutableStateOf(0) }
 
+    val totalPhotos = existingPhotoUrls.size + selectedImageUris.size
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(6)
     ) { uris ->
         if (uris.isNotEmpty()) {
-            selectedImageUris = uris
-            existingPhotoUrls = emptyList() // clear existing when picking new
+            val remainingSlots = 6 - (existingPhotoUrls.size + selectedImageUris.size)
+            if (remainingSlots > 0) {
+                selectedImageUris = selectedImageUris + uris.take(remainingSlots)
+            } else {
+                Toast.makeText(context, "Maximum 6 photos allowed. Remove existing photos first.", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -98,6 +115,7 @@ fun AddEditMotorScreen(
                     existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
                     existingCreatedBy = motor.createdBy
                     existingCreatedByName = motor.createdByName
+                    existingStatus = motor.status
                     if (motor.category.isNotEmpty()) {
                         category = motor.category
                     }
@@ -120,6 +138,7 @@ fun AddEditMotorScreen(
                     existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
                     existingCreatedBy = motor.createdBy
                     existingCreatedByName = motor.createdByName
+                    existingStatus = motor.status
                     if (motor.category.isNotEmpty()) {
                         category = motor.category
                     }
@@ -199,16 +218,47 @@ fun AddEditMotorScreen(
                 elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    val displayUrls = if (selectedImageUris.isNotEmpty()) selectedImageUris else existingPhotoUrls
-                    if (displayUrls.isNotEmpty()) {
-                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            displayUrls.forEach { url ->
-                                AsyncImage(
-                                    model = url,
-                                    contentDescription = "Motor Photo",
-                                    modifier = Modifier.size(200.dp).clip(RoundedCornerShape(16.dp)),
-                                    contentScale = ContentScale.Crop
-                                )
+                    if (totalPhotos > 0) {
+                        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            existingPhotoUrls.forEach { url ->
+                                Box(modifier = Modifier.size(160.dp).clip(RoundedCornerShape(16.dp))) {
+                                    AsyncImage(
+                                        model = url,
+                                        contentDescription = "Motor Photo",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    IconButton(
+                                        onClick = { existingPhotoUrls = existingPhotoUrls.filter { it != url } },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(6.dp)
+                                            .size(28.dp)
+                                            .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                    ) {
+                                        Icon(Icons.Rounded.Close, contentDescription = "Remove photo", tint = Color.White, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                            selectedImageUris.forEach { uri ->
+                                Box(modifier = Modifier.size(160.dp).clip(RoundedCornerShape(16.dp))) {
+                                    AsyncImage(
+                                        model = uri,
+                                        contentDescription = "Motor Photo",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    IconButton(
+                                        onClick = { selectedImageUris = selectedImageUris.filter { it != uri } },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(6.dp)
+                                            .size(28.dp)
+                                            .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                    ) {
+                                        Icon(Icons.Rounded.Close, contentDescription = "Remove photo", tint = Color.White, modifier = Modifier.size(16.dp))
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -223,12 +273,20 @@ fun AddEditMotorScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                     
                     Button(
-                        onClick = { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        onClick = {
+                            val remaining = 6 - totalPhotos
+                            if (remaining > 0) {
+                                photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            } else {
+                                Toast.makeText(context, "Maximum 6 photos allowed. Remove a photo to add another.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = totalPhotos < 6,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
                     ) {
-                        Icon(Icons.Rounded.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (displayUrls.isEmpty()) "Upload Photos (Max 6)" else "Replace Photos", fontWeight = FontWeight.Bold)
+                        Text(if (totalPhotos == 0) "Add Photos (Max 6)" else "Add Photos ($totalPhotos/6)", fontWeight = FontWeight.Bold)
                     }
 
                     val safeDiagnostic = remember { motorViewModel.getSafeDiagnostic() }
@@ -344,16 +402,20 @@ fun AddEditMotorScreen(
                     }
 
                     isUploading = true
-                    val finalStatus = if (isPublic) "pending" else "approved"
-                    val finalCreatedBy = if (actualId.isNotEmpty() && !isPublic) {
-                        existingCreatedBy.ifEmpty { user?.id ?: "unknown" }
+                    val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                    val currentUid = user?.id?.ifBlank { authUid } ?: authUid
+                    val currentUserName = user?.name?.ifBlank { "Public User" } ?: "Public User"
+
+                    val finalStatus = if (isPublic) "pending" else if (actualId.isNotEmpty()) existingStatus.ifBlank { "approved" } else "approved"
+                    val finalCreatedBy = if (isPublic) {
+                        currentUid
                     } else {
-                        user?.id ?: "unknown"
+                        if (actualId.isNotEmpty()) existingCreatedBy.ifEmpty { currentUid } else currentUid
                     }
                     val finalCreatedByName = if (isPublic) {
-                        user?.name?.ifBlank { "Public User" } ?: "Public User"
+                        currentUserName
                     } else {
-                        if (actualId.isNotEmpty()) existingCreatedByName else ""
+                        if (actualId.isNotEmpty()) existingCreatedByName else currentUserName
                     }
 
                     coroutineScope.launch {
@@ -374,7 +436,7 @@ fun AddEditMotorScreen(
                                     return@launch
                                 }
                             }
-                            finalPhotoUrls = newUrls
+                            finalPhotoUrls = existingPhotoUrls + newUrls
                         }
                         isUploading = false
                         

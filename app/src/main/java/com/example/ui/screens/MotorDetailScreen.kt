@@ -152,6 +152,15 @@ fun MotorDetailScreen(
                     }
                     
                     DetailSection(title = "Basic Information", icon = Icons.Rounded.Info) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Status", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            com.example.ui.components.StatusBadge(motor.status)
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
                         DetailRow("Company Name", motor.companyName)
                         if (motor.category.isNotEmpty()) {
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
@@ -249,6 +258,15 @@ fun MotorDetailScreen(
                     }
                     
                     DetailSection(title = "Basic Information", icon = Icons.Rounded.Info) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Status", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            com.example.ui.components.StatusBadge(motor.status)
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
                         DetailRow("Company Name", motor.name)
                         if (motor.category.isNotEmpty()) {
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.surfaceVariant)
