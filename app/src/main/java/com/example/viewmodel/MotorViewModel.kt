@@ -144,14 +144,19 @@ class MotorViewModel : ViewModel() {
         }
     }
     
-    fun updateSinglePhaseStatus(id: String, status: String) {
+    fun updateSinglePhaseStatus(id: String, status: String, rejectionReason: String = "") {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             // Optimistically update local list so UI immediately reflects the new status
             _singlePhaseMotors.value = _singlePhaseMotors.value.map {
-                if (it.id == id) it.copy(status = status) else it
+                if (it.id == id) it.copy(
+                    status = status,
+                    rejectionReason = if (status == "rejected") rejectionReason.trim() else "",
+                    adminSeen = true,
+                    seen = true
+                ) else it
             }
-            repo.updateSinglePhaseStatus(id, status).onSuccess {
+            repo.updateSinglePhaseStatus(id, status, rejectionReason).onSuccess {
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
@@ -161,14 +166,19 @@ class MotorViewModel : ViewModel() {
         }
     }
     
-    fun updateThreePhaseStatus(id: String, status: String) {
+    fun updateThreePhaseStatus(id: String, status: String, rejectionReason: String = "") {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             // Optimistically update local list so UI immediately reflects the new status
             _threePhaseMotors.value = _threePhaseMotors.value.map {
-                if (it.id == id) it.copy(status = status) else it
+                if (it.id == id) it.copy(
+                    status = status,
+                    rejectionReason = if (status == "rejected") rejectionReason.trim() else "",
+                    adminSeen = true,
+                    seen = true
+                ) else it
             }
-            repo.updateThreePhaseStatus(id, status).onSuccess {
+            repo.updateThreePhaseStatus(id, status, rejectionReason).onSuccess {
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
@@ -237,20 +247,48 @@ class MotorViewModel : ViewModel() {
         }
     }
 
-    fun updateCustomMotorStatus(id: String, status: String) {
+    fun updateCustomMotorStatus(id: String, status: String, rejectionReason: String = "") {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             // Optimistically update local list so UI immediately reflects the new status
             _customMotors.value = _customMotors.value.map {
-                if (it.id == id) it.copy(status = status) else it
+                if (it.id == id) it.copy(
+                    status = status,
+                    rejectionReason = if (status == "rejected") rejectionReason.trim() else "",
+                    adminSeen = true,
+                    seen = true
+                ) else it
             }
-            repo.updateCustomMotorStatus(id, status).onSuccess {
+            repo.updateCustomMotorStatus(id, status, rejectionReason).onSuccess {
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
             }.onFailure {
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Error(it.message ?: "Failed to update status")
             }
+        }
+    }
+
+    fun markMotorAsSeen(type: String, id: String) {
+        when (type.lowercase()) {
+            "single" -> {
+                _singlePhaseMotors.value = _singlePhaseMotors.value.map {
+                    if (it.id == id) it.copy(adminSeen = true, seen = true) else it
+                }
+            }
+            "three" -> {
+                _threePhaseMotors.value = _threePhaseMotors.value.map {
+                    if (it.id == id) it.copy(adminSeen = true, seen = true) else it
+                }
+            }
+            "custom" -> {
+                _customMotors.value = _customMotors.value.map {
+                    if (it.id == id) it.copy(adminSeen = true, seen = true) else it
+                }
+            }
+        }
+        viewModelScope.launch {
+            repo.markMotorAsSeen(type, id)
         }
     }
 

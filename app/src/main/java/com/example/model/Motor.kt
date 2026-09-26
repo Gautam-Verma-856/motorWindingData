@@ -19,11 +19,18 @@ data class SinglePhaseMotor(
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
     val createdByName: String = "",
-    val status: String = "" // Explicitly approved records will have "approved"
+    val status: String = "", // Explicitly approved records will have "approved"
+    val adminSeen: Boolean = false,
+    val seen: Boolean = false,
+    val rejectionReason: String = "",
+    val reviewedAt: Long = 0L,
+    val reviewedBy: String = "",
+    val reviewedByName: String = ""
 ) {
     fun isExplicitlyApproved(): Boolean = status.trim().equals("approved", ignoreCase = true)
     fun isPending(): Boolean = status.trim().equals("pending", ignoreCase = true)
     fun isRejected(): Boolean = status.trim().equals("rejected", ignoreCase = true)
+    fun isUnseen(): Boolean = isPending() && !adminSeen && !seen
 }
 
 data class ThreePhaseMotor(
@@ -41,11 +48,18 @@ data class ThreePhaseMotor(
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
     val createdByName: String = "",
-    val status: String = "" // Explicitly approved records will have "approved"
+    val status: String = "", // Explicitly approved records will have "approved"
+    val adminSeen: Boolean = false,
+    val seen: Boolean = false,
+    val rejectionReason: String = "",
+    val reviewedAt: Long = 0L,
+    val reviewedBy: String = "",
+    val reviewedByName: String = ""
 ) {
     fun isExplicitlyApproved(): Boolean = status.trim().equals("approved", ignoreCase = true)
     fun isPending(): Boolean = status.trim().equals("pending", ignoreCase = true)
     fun isRejected(): Boolean = status.trim().equals("rejected", ignoreCase = true)
+    fun isUnseen(): Boolean = isPending() && !adminSeen && !seen
 }
 
 data class CustomCategoryField(
@@ -82,9 +96,16 @@ data class CustomMotor(
     val createdAt: Long = System.currentTimeMillis(),
     val createdBy: String = "",
     val createdByName: String = "",
-    val status: String = "" // "approved", "pending", "rejected"
+    val status: String = "", // "approved", "pending", "rejected"
+    val adminSeen: Boolean = false,
+    val seen: Boolean = false,
+    val rejectionReason: String = "",
+    val reviewedAt: Long = 0L,
+    val reviewedBy: String = "",
+    val reviewedByName: String = ""
 ) {
     fun isExplicitlyApproved(): Boolean = status.trim().equals("approved", ignoreCase = true)
     fun isPending(): Boolean = status.trim().equals("pending", ignoreCase = true)
     fun isRejected(): Boolean = status.trim().equals("rejected", ignoreCase = true)
+    fun isUnseen(): Boolean = isPending() && !adminSeen && !seen
 }

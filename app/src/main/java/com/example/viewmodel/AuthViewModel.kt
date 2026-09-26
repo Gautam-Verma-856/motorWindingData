@@ -189,9 +189,21 @@ class AuthViewModel : ViewModel() {
     }
     
     fun updateUserStatus(userId: String, status: String) {
+        _usersList.value = _usersList.value.map {
+            if (it.id == userId) it.copy(accountStatus = status, adminSeen = true, seen = true) else it
+        }
         viewModelScope.launch {
             repo.updateUserStatus(userId, status)
             fetchUsers()
+        }
+    }
+
+    fun markUserAsSeen(userId: String) {
+        _usersList.value = _usersList.value.map {
+            if (it.id == userId) it.copy(adminSeen = true, seen = true) else it
+        }
+        viewModelScope.launch {
+            repo.markUserAsSeen(userId)
         }
     }
     

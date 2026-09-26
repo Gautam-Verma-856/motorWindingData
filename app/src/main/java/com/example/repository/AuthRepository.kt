@@ -45,8 +45,12 @@ class AuthRepository {
                     }
                     if (needsUpdate) {
                         try {
+                            Log.d("AuthRepository", "Updating admin profile document (uid=$uid): $updates")
                             db.collection("users").document(uid).update(updates).await()
-                        } catch (_: Exception) {}
+                            Log.d("AuthRepository", "Admin profile document successfully updated in Firestore")
+                        } catch (e: Exception) {
+                            Log.e("AuthRepository", "Warning: Failed to update admin profile in Firestore (uid=$uid): ${e.message}")
+                        }
                     }
                     return Result.success(user)
                 }
@@ -201,8 +205,12 @@ class AuthRepository {
                 }
                 if (needsUpdate) {
                     try {
+                        Log.d("AuthRepository", "fetchCurrentUserProfile: Updating admin profile (uid=$uid): $updates")
                         db.collection("users").document(uid).update(updates).await()
-                    } catch (_: Exception) {}
+                        Log.d("AuthRepository", "fetchCurrentUserProfile: Admin profile updated")
+                    } catch (e: Exception) {
+                        Log.e("AuthRepository", "fetchCurrentUserProfile: Failed to update admin profile (uid=$uid): ${e.message}")
+                    }
                 }
             }
             user
@@ -230,7 +238,13 @@ class AuthRepository {
 
     suspend fun updateUserStatus(userId: String, status: String): Result<Unit> {
         return try {
-            db.collection("users").document(userId).update("accountStatus", status).await()
+            db.collection("users").document(userId).update(
+                mapOf(
+                    "accountStatus" to status,
+                    "adminSeen" to true,
+                    "seen" to true
+                )
+            ).await()
             Result.success(Unit)
         } catch (e: Exception) {
             val errorCode = if (e is FirebaseAuthException) e.errorCode else "UNKNOWN"
@@ -241,6 +255,20 @@ class AuthRepository {
             } else {
                 Result.failure(e)
             }
+        }
+    }
+
+    suspend fun markUserAsSeen(userId: String): Result<Unit> {
+        return try {
+            db.collection("users").document(userId).update(
+                mapOf(
+                    "adminSeen" to true,
+                    "seen" to true
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
     

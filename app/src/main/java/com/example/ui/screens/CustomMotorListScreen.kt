@@ -107,13 +107,9 @@ fun CustomMotorListScreen(
     }
 
     if (motorToReject != null) {
-        ConfirmationDialog(
-            title = "Reject Submission?",
-            message = "Are you sure you want to reject this motor data?",
-            confirmText = "Reject",
-            isDestructive = true,
-            onConfirm = {
-                motorViewModel.updateCustomMotorStatus(motorToReject!!, "rejected")
+        com.example.ui.components.RejectionReasonDialog(
+            onConfirm = { reason ->
+                motorViewModel.updateCustomMotorStatus(motorToReject!!, "rejected", reason)
                 motorToReject = null
             },
             onDismiss = { motorToReject = null }
@@ -481,6 +477,15 @@ fun CustomMotorCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Submitted: $dateStr", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+
+            if (motor.isRejected()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                com.example.ui.components.RejectionReasonCard(
+                    rejectionReason = motor.rejectionReason,
+                    reviewedByName = motor.reviewedByName,
+                    reviewedAt = motor.reviewedAt
+                )
             }
 
             // ACTION BUTTONS

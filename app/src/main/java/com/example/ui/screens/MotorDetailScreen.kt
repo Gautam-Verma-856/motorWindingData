@@ -46,6 +46,13 @@ fun MotorDetailScreen(
 
     var fullScreenPhotos by remember { mutableStateOf<List<String>?>(null) }
     var fullScreenInitialIndex by remember { mutableIntStateOf(0) }
+    var showRejectDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(id, type) {
+        if (role == "admin") {
+            motorViewModel.markMotorAsSeen(type, id)
+        }
+    }
 
     val motorName: String
     val motorSubtitle: String
@@ -195,6 +202,50 @@ fun MotorDetailScreen(
                     if (motor.createdByName.isNotBlank()) {
                         AddedByCard(name = motor.createdByName)
                     }
+
+                    if (motor.isRejected()) {
+                        com.example.ui.components.RejectionReasonCard(
+                            rejectionReason = motor.rejectionReason,
+                            reviewedByName = motor.reviewedByName,
+                            reviewedAt = motor.reviewedAt
+                        )
+                    }
+
+                    if (role == "admin" && (motor.isPending() || motor.isRejected())) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    text = "Admin Review Actions",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Button(
+                                        onClick = { motorViewModel.updateSinglePhaseStatus(motor.id, "approved") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(if (motor.isRejected()) "Re-Approve" else "Approve Motor", fontWeight = FontWeight.Bold)
+                                    }
+                                    if (motor.isPending()) {
+                                        OutlinedButton(
+                                            onClick = { showRejectDialog = true },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Reject", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     Text("Motor not found.")
                 }
@@ -291,6 +342,50 @@ fun MotorDetailScreen(
                     if (motor.createdByName.isNotBlank()) {
                         AddedByCard(name = motor.createdByName)
                     }
+
+                    if (motor.isRejected()) {
+                        com.example.ui.components.RejectionReasonCard(
+                            rejectionReason = motor.rejectionReason,
+                            reviewedByName = motor.reviewedByName,
+                            reviewedAt = motor.reviewedAt
+                        )
+                    }
+
+                    if (role == "admin" && (motor.isPending() || motor.isRejected())) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    text = "Admin Review Actions",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Button(
+                                        onClick = { motorViewModel.updateThreePhaseStatus(motor.id, "approved") },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(if (motor.isRejected()) "Re-Approve" else "Approve Motor", fontWeight = FontWeight.Bold)
+                                    }
+                                    if (motor.isPending()) {
+                                        OutlinedButton(
+                                            onClick = { showRejectDialog = true },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Reject", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     Text("Motor not found.")
                 }
@@ -304,6 +399,20 @@ fun MotorDetailScreen(
             photos = fullScreenPhotos!!,
             initialIndex = fullScreenInitialIndex,
             onDismiss = { fullScreenPhotos = null }
+        )
+    }
+
+    if (showRejectDialog) {
+        com.example.ui.components.RejectionReasonDialog(
+            onConfirm = { reason ->
+                if (type == "single") {
+                    motorViewModel.updateSinglePhaseStatus(id, "rejected", reason)
+                } else {
+                    motorViewModel.updateThreePhaseStatus(id, "rejected", reason)
+                }
+                showRejectDialog = false
+            },
+            onDismiss = { showRejectDialog = false }
         )
     }
 }

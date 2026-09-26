@@ -41,6 +41,33 @@ fun UserManagementScreen(
     var searchQuery by remember { mutableStateOf("") }
     var statusFilter by remember { mutableStateOf(initialFilter?.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() } ?: "All") }
     var userToReject by remember { mutableStateOf<String?>(null) }
+    var selectedUserForDetails by remember { mutableStateOf<com.example.model.User?>(null) }
+    
+    if (selectedUserForDetails != null) {
+        val u = selectedUserForDetails!!
+        AlertDialog(
+            onDismissRequest = { selectedUserForDetails = null },
+            icon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text(u.name, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Email: ${u.email}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Mobile: ${if (u.mobile.isNotBlank()) u.mobile else "Not provided"}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Status: ${u.accountStatus.uppercase()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Email Verified: ${if (u.emailVerified) "Yes" else "No"}", style = MaterialTheme.typography.bodyMedium)
+                    if (u.createdAt > 0L) {
+                        val regDate = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(u.createdAt))
+                        Text("Registered: $regDate", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedUserForDetails = null }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
     
     if (userToReject != null) {
         ConfirmationDialog(
@@ -80,7 +107,7 @@ fun UserManagementScreen(
             TopAppBar(
                 title = { 
                     Column {
-                        Text("Manage Public Users", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text("Manage Users", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text("Manage registered public accounts & submissions", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
@@ -203,6 +230,12 @@ fun UserManagementScreen(
                         }
 
                         ElevatedCard(
+                            onClick = {
+                                if (user.isUnseen()) {
+                                    authViewModel.markUserAsSeen(user.id)
+                                }
+                                selectedUserForDetails = user
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(20.dp),
                             colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -219,7 +252,17 @@ fun UserManagementScreen(
                                     }
                                     Spacer(modifier = Modifier.width(14.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(user.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(user.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                            if (user.isUnseen()) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .background(Color(0xFFEF4444), CircleShape)
+                                                )
+                                            }
+                                        }
                                         Text(user.email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     

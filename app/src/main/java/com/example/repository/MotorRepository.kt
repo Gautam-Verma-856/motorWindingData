@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import com.example.model.SinglePhaseMotor
 import com.example.model.ThreePhaseMotor
 import com.example.model.CustomCategory
@@ -328,9 +329,21 @@ class MotorRepository {
         }
     }
 
-    suspend fun updateSinglePhaseStatus(id: String, status: String): Result<Unit> {
+    suspend fun updateSinglePhaseStatus(id: String, status: String, rejectionReason: String = ""): Result<Unit> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        val adminUid = authUser?.uid ?: ""
+        val adminName = authUser?.displayName ?: "Admin"
+        val updates = mutableMapOf<String, Any>(
+            "status" to status,
+            "rejectionReason" to (if (status == "rejected") rejectionReason.trim() else ""),
+            "reviewedAt" to System.currentTimeMillis(),
+            "reviewedBy" to adminUid,
+            "reviewedByName" to adminName,
+            "adminSeen" to true,
+            "seen" to true
+        )
         return try {
-            db.collection("single_phase_motors").document(id).update("status", status).await()
+            db.collection("single_phase_motors").document(id).update(updates).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -451,9 +464,21 @@ class MotorRepository {
         }
     }
 
-    suspend fun updateThreePhaseStatus(id: String, status: String): Result<Unit> {
+    suspend fun updateThreePhaseStatus(id: String, status: String, rejectionReason: String = ""): Result<Unit> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        val adminUid = authUser?.uid ?: ""
+        val adminName = authUser?.displayName ?: "Admin"
+        val updates = mutableMapOf<String, Any>(
+            "status" to status,
+            "rejectionReason" to (if (status == "rejected") rejectionReason.trim() else ""),
+            "reviewedAt" to System.currentTimeMillis(),
+            "reviewedBy" to adminUid,
+            "reviewedByName" to adminName,
+            "adminSeen" to true,
+            "seen" to true
+        )
         return try {
-            db.collection("three_phase_motors").document(id).update("status", status).await()
+            db.collection("three_phase_motors").document(id).update(updates).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -464,6 +489,7 @@ class MotorRepository {
     suspend fun saveCustomCategory(category: CustomCategory): Result<Unit> {
         val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
         if (authUser == null) {
+            Log.e("MotorRepository", "saveCustomCategory failed: Authentication required (currentUser is null)")
             return Result.failure(Exception("Authentication required"))
         }
         return try {
@@ -474,9 +500,12 @@ class MotorRepository {
                 createdBy = category.createdBy.ifEmpty { currentUid },
                 createdAt = if (category.createdAt == 0L) System.currentTimeMillis() else category.createdAt
             )
+            Log.d("MotorRepository", "saveCustomCategory: Saving category id=$id, name='${categoryToSave.name}', uid=$currentUid to collection 'custom_categories'")
             db.collection("custom_categories").document(id).set(categoryToSave).await()
+            Log.d("MotorRepository", "saveCustomCategory: Successfully saved category id=$id")
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e("MotorRepository", "saveCustomCategory failed for category id=${category.id.ifEmpty { "new" }}: ${e.javaClass.simpleName} - ${e.message}")
             Result.failure(e)
         }
     }
@@ -506,12 +535,16 @@ class MotorRepository {
     suspend fun deleteCustomCategory(id: String): Result<Unit> {
         val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
         if (authUser == null) {
+            Log.e("MotorRepository", "deleteCustomCategory failed: Authentication required (currentUser is null)")
             return Result.failure(Exception("Authentication required"))
         }
         return try {
+            Log.d("MotorRepository", "deleteCustomCategory: Deleting category id=$id, uid=${authUser.uid} from collection 'custom_categories'")
             db.collection("custom_categories").document(id).delete().await()
+            Log.d("MotorRepository", "deleteCustomCategory: Successfully deleted category id=$id")
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e("MotorRepository", "deleteCustomCategory failed for category id=$id: ${e.javaClass.simpleName} - ${e.message}")
             Result.failure(e)
         }
     }
@@ -634,9 +667,41 @@ class MotorRepository {
         }
     }
 
-    suspend fun updateCustomMotorStatus(id: String, status: String): Result<Unit> {
+    suspend fun updateCustomMotorStatus(id: String, status: String, rejectionReason: String = ""): Result<Unit> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        val adminUid = authUser?.uid ?: ""
+        val adminName = authUser?.displayName ?: "Admin"
+        val updates = mutableMapOf<String, Any>(
+            "status" to status,
+            "rejectionReason" to (if (status == "rejected") rejectionReason.trim() else ""),
+            "reviewedAt" to System.currentTimeMillis(),
+            "reviewedBy" to adminUid,
+            "reviewedByName" to adminName,
+            "adminSeen" to true,
+            "seen" to true
+        )
         return try {
-            db.collection("custom_motors").document(id).update("status", status).await()
+            db.collection("custom_motors").document(id).update(updates).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun markMotorAsSeen(type: String, id: String): Result<Unit> {
+        return try {
+            val collectionName = when (type.lowercase()) {
+                "single" -> "single_phase_motors"
+                "three" -> "three_phase_motors"
+                "custom" -> "custom_motors"
+                else -> "single_phase_motors"
+            }
+            db.collection(collectionName).document(id).update(
+                mapOf(
+                    "adminSeen" to true,
+                    "seen" to true
+                )
+            ).await()
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

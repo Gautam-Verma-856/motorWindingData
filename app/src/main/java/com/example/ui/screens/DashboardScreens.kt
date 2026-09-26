@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +31,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -54,10 +57,127 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
     val pendingUsersCount = usersList.count { it.role == "public" && it.accountStatus == "pending" }
     val activeUsersCount = usersList.count { it.role == "public" && it.accountStatus == "active" }
     val totalPublicUsersCount = usersList.count { it.role == "public" }
+
+    val unseenPendingSingle = singlePhaseMotors.count { it.isUnseen() }
+    val unseenPendingThree = threePhaseMotors.count { it.isUnseen() }
+    val unseenPendingCustom = customMotors.count { it.isUnseen() }
+    val unseenPendingMotorsCount = unseenPendingSingle + unseenPendingThree + unseenPendingCustom
+    val unseenPendingUsersCount = usersList.count { it.isUnseen() }
+    val totalUnseenCount = unseenPendingMotorsCount + unseenPendingUsersCount
+    val hasUnreadNotifications = totalUnseenCount > 0
+    var showNotificationsDialog by remember { mutableStateOf(false) }
     
     LaunchedEffect(currentUser) {
         motorViewModel.loadData(isAdmin = true, userId = currentUser?.id)
         authViewModel.fetchUsers()
+    }
+
+    if (showNotificationsDialog) {
+        val pendingMotors = (singlePhaseMotors.filter { it.isPending() }.map { Triple("single", it.id, it.companyName) } +
+                            threePhaseMotors.filter { it.isPending() }.map { Triple("three", it.id, it.name) } +
+                            customMotors.filter { it.isPending() }.map { Triple("custom", it.id, it.companyName) })
+        val pendingUsers = usersList.filter { it.role == "public" && it.accountStatus == "pending" }
+
+        AlertDialog(
+            onDismissRequest = { showNotificationsDialog = false },
+            icon = { Icon(Icons.Rounded.Notifications, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Notifications", fontWeight = FontWeight.Bold)
+                    if (totalUnseenCount > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(shape = CircleShape, color = Color(0xFFEF4444)) {
+                            Text(
+                                "$totalUnseenCount new",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            text = {
+                if (pendingMotors.isEmpty() && pendingUsers.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(40.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("All caught up!", fontWeight = FontWeight.Bold)
+                            Text("No pending motor submissions or users.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(pendingMotors) { (mType, mId, mName) ->
+                            val isItemUnseen = when (mType) {
+                                "single" -> singlePhaseMotors.find { it.id == mId }?.isUnseen() == true
+                                "three" -> threePhaseMotors.find { it.id == mId }?.isUnseen() == true
+                                else -> customMotors.find { it.id == mId }?.isUnseen() == true
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    motorViewModel.markMotorAsSeen(mType, mId)
+                                    showNotificationsDialog = false
+                                    if (mType == "custom") {
+                                        navController.navigate("custom_motor_detail/$mId")
+                                    } else {
+                                        navController.navigate("motor_detail/$mType/$mId")
+                                    }
+                                }
+                            ) {
+                                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.PendingActions, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Pending Motor: $mName", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                        Text(if (mType == "single") "Single Phase Motor" else if (mType == "three") "3 Phase Motor" else "Custom Motor", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    if (isItemUnseen) {
+                                        Box(modifier = Modifier.size(8.dp).background(Color(0xFFEF4444), CircleShape))
+                                    }
+                                }
+                            }
+                        }
+                        items(pendingUsers) { u ->
+                            val isItemUnseen = u.isUnseen()
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    authViewModel.markUserAsSeen(u.id)
+                                    showNotificationsDialog = false
+                                    navController.navigate("user_management?filter=pending")
+                                }
+                            ) {
+                                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.PersonAdd, contentDescription = null, tint = Color(0xFF06B6D4), modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Pending User: ${u.name}", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                                        Text(u.email, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    if (isItemUnseen) {
+                                        Box(modifier = Modifier.size(8.dp).background(Color(0xFFEF4444), CircleShape))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showNotificationsDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
     }
     
     Scaffold(
@@ -74,6 +194,29 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     titleContentColor = MaterialTheme.colorScheme.onBackground
                 ),
                 actions = {
+                    Box(modifier = Modifier.padding(end = 4.dp)) {
+                        IconButton(
+                            onClick = { showNotificationsDialog = true },
+                            modifier = Modifier.testTag("admin_notifications_button")
+                        ) {
+                            Icon(
+                                Icons.Rounded.Notifications,
+                                contentDescription = "Notifications",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        if (hasUnreadNotifications) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = (-4).dp, y = 4.dp)
+                                    .size(10.dp)
+                                    .background(Color(0xFFEF4444), CircleShape)
+                                    .testTag("notification_unread_dot")
+                            )
+                        }
+                    }
+
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primaryContainer,
@@ -151,7 +294,8 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     subtitle = "Review public motor submissions",
                     icon = Icons.Rounded.PendingActions,
                     accentColor = if (pendingCount > 0) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary,
-                    badgeCount = pendingCount
+                    badgeCount = pendingCount,
+                    hasUnreadDot = (unseenPendingMotorsCount > 0)
                 ) { navController.navigate("motor_list/pending") }
                 
                 PremiumActionCard(
@@ -179,11 +323,12 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                 ) { navController.navigate("motor_list/all") }
                 
                 PremiumActionCard(
-                    title = "Manage Public Data",
+                    title = "Manage Users",
                     subtitle = "Manage registered public accounts",
                     icon = Icons.Rounded.ManageAccounts,
                     accentColor = Color(0xFF06B6D4),
-                    badgeCount = pendingUsersCount
+                    badgeCount = pendingUsersCount,
+                    hasUnreadDot = (unseenPendingUsersCount > 0)
                 ) { navController.navigate("user_management") }
 
                 PremiumActionCard(
@@ -438,7 +583,15 @@ fun QuickActionButton(text: String, icon: ImageVector, color: Color, onClick: ()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PremiumActionCard(title: String, subtitle: String, icon: ImageVector, accentColor: Color = MaterialTheme.colorScheme.primary, badgeCount: Int = 0, onClick: () -> Unit) {
+fun PremiumActionCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
+    badgeCount: Int = 0,
+    hasUnreadDot: Boolean = false,
+    onClick: () -> Unit
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.98f else 1f, label = "scale")
@@ -460,11 +613,28 @@ fun PremiumActionCard(title: String, subtitle: String, icon: ImageVector, accent
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(24.dp))
+                if (hasUnreadDot) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 2.dp, y = (-2).dp)
+                            .size(10.dp)
+                            .background(Color(0xFFEF4444), CircleShape)
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (hasUnreadDot) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(Color(0xFFEF4444), CircleShape)
+                        )
+                    }
                     if (badgeCount > 0) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(

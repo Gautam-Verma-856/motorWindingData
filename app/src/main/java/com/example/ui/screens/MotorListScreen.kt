@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -140,16 +142,12 @@ fun MotorListScreen(
     }
 
     if (motorToReject != null) {
-        ConfirmationDialog(
-            title = "Reject Submission?",
-            message = "Are you sure you want to reject this motor data?",
-            confirmText = "Reject",
-            isDestructive = true,
-            onConfirm = {
+        com.example.ui.components.RejectionReasonDialog(
+            onConfirm = { reason ->
                 when (rejectType) {
-                    "single" -> motorViewModel.updateSinglePhaseStatus(motorToReject!!, "rejected")
-                    "three" -> motorViewModel.updateThreePhaseStatus(motorToReject!!, "rejected")
-                    "custom" -> motorViewModel.updateCustomMotorStatus(motorToReject!!, "rejected")
+                    "single" -> motorViewModel.updateSinglePhaseStatus(motorToReject!!, "rejected", reason)
+                    "three" -> motorViewModel.updateThreePhaseStatus(motorToReject!!, "rejected", reason)
+                    "custom" -> motorViewModel.updateCustomMotorStatus(motorToReject!!, "rejected", reason)
                 }
                 motorToReject = null
                 rejectType = null
@@ -832,6 +830,14 @@ fun PremiumSinglePhaseMotorCard(
                             )
                         }
                     }
+                    if (motor.isUnseen()) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(Color(0xFFEF4444), CircleShape)
+                        )
+                    }
                 }
                 StatusBadge(motor.status)
             }
@@ -903,6 +909,15 @@ fun PremiumSinglePhaseMotorCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Submitted: $dateStr", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+
+            if (motor.isRejected()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                com.example.ui.components.RejectionReasonCard(
+                    rejectionReason = motor.rejectionReason,
+                    reviewedByName = motor.reviewedByName,
+                    reviewedAt = motor.reviewedAt
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -1025,6 +1040,14 @@ fun PremiumThreePhaseMotorCard(
                             )
                         }
                     }
+                    if (motor.isUnseen()) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(Color(0xFFEF4444), CircleShape)
+                        )
+                    }
                 }
                 StatusBadge(motor.status)
             }
@@ -1096,6 +1119,15 @@ fun PremiumThreePhaseMotorCard(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Submitted: $dateStr", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+
+            if (motor.isRejected()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                com.example.ui.components.RejectionReasonCard(
+                    rejectionReason = motor.rejectionReason,
+                    reviewedByName = motor.reviewedByName,
+                    reviewedAt = motor.reviewedAt
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))

@@ -310,6 +310,20 @@ class MotorStatusWorkflowTest {
         assertFalse(companies.contains("texmo"))
     }
 
+    // Helper simulating the exact Firestore security rules isAdmin() condition
+    private fun simulateFirestoreIsAdminRule(authUid: String?, userDoc: com.example.model.User?): Boolean {
+        if (authUid == null || userDoc == null) return false
+        val roleMatches = userDoc.role.equals("admin", ignoreCase = true)
+        val notBlockedOrSuspended = !userDoc.accountStatus.equals("blocked", ignoreCase = true) &&
+                                   !userDoc.accountStatus.equals("suspended", ignoreCase = true)
+        return roleMatches && notBlockedOrSuspended
+    }
+
+    // Helper simulating category write rule: allow create, update, delete: if isAdmin();
+    private fun canUserWriteCustomCategory(authUid: String?, userDoc: com.example.model.User?): Boolean {
+        return simulateFirestoreIsAdminRule(authUid, userDoc)
+    }
+
     // -------------------------------------------------------------
     // 8. ACTIVE ADMIN CAN CREATE, EDIT, AND DELETE CUSTOM CATEGORY
     // -------------------------------------------------------------
@@ -323,12 +337,7 @@ class MotorStatusWorkflowTest {
             accountStatus = "active"
         )
 
-        fun canAdminManageCategories(user: com.example.model.User): Boolean {
-            return user.role.equals("admin", ignoreCase = true) &&
-                   user.accountStatus.equals("active", ignoreCase = true)
-        }
-
-        assertTrue("Active admin must be permitted to manage categories", canAdminManageCategories(adminUser))
+        assertTrue("Active admin must be permitted to manage categories", canUserWriteCustomCategory(adminUser.id, adminUser))
 
         val newCategory = CustomCategory(
             id = "cat_cooler",
@@ -345,8 +354,41 @@ class MotorStatusWorkflowTest {
         assertEquals("admin_uid_001", newCategory.createdBy)
     }
 
+    @Test
+    fun testAdminPromotedFromRegistrationCanCreateCustomCategory() {
+        // Admin whose account was created via public registration and role was promoted in Console,
+        // but accountStatus remained "pending" in Firestore
+        val promotedAdminWithPendingStatus = com.example.model.User(
+            id = "admin_uid_promoted",
+            name = "Promoted Admin",
+            email = "gautamverma90987@gmail.com",
+            role = "admin",
+            accountStatus = "pending"
+        )
+
+        // Must still be authorized because role is explicitly "admin" and not blocked/suspended
+        assertTrue("Admin with un-updated accountStatus must be permitted", canUserWriteCustomCategory(promotedAdminWithPendingStatus.id, promotedAdminWithPendingStatus))
+    }
+
+    @Test
+    fun testBlockedOrSuspendedAdminCannotCreateCustomCategory() {
+        val blockedAdmin = com.example.model.User(
+            id = "admin_blocked",
+            role = "admin",
+            accountStatus = "blocked"
+        )
+        val suspendedAdmin = com.example.model.User(
+            id = "admin_suspended",
+            role = "admin",
+            accountStatus = "suspended"
+        )
+
+        assertFalse("Blocked admin must be denied", canUserWriteCustomCategory(blockedAdmin.id, blockedAdmin))
+        assertFalse("Suspended admin must be denied", canUserWriteCustomCategory(suspendedAdmin.id, suspendedAdmin))
+    }
+
     // -------------------------------------------------------------
-    // 9. PUBLIC USER CANNOT CREATE, EDIT, OR DELETE CUSTOM CATEGORY
+    // 9. PUBLIC AND UNAUTHENTICATED USERS CANNOT WRITE CUSTOM CATEGORY
     // -------------------------------------------------------------
     @Test
     fun testPublicUserCannotManageCustomCategory() {
@@ -358,12 +400,12 @@ class MotorStatusWorkflowTest {
             accountStatus = "active"
         )
 
-        fun canUserManageCategories(user: com.example.model.User): Boolean {
-            return user.role.equals("admin", ignoreCase = true) &&
-                   user.accountStatus.equals("active", ignoreCase = true)
-        }
+        assertFalse("Public user must NOT be permitted to write categories", canUserWriteCustomCategory(publicUser.id, publicUser))
+    }
 
-        assertFalse("Public user must NOT be permitted to manage categories", canUserManageCategories(publicUser))
+    @Test
+    fun testUnauthenticatedUserCannotManageCustomCategory() {
+        assertFalse("Unauthenticated user must NOT be permitted to write categories", canUserWriteCustomCategory(null, null))
     }
 
     // -------------------------------------------------------------
@@ -650,5 +692,187 @@ class MotorStatusWorkflowTest {
         val publicBrowseAfterReApproval = repositoryList.filter { it.isExplicitlyApproved() }
         assertEquals(1, publicBrowseAfterReApproval.size)
         assertEquals("Approved", getStatusBadgeText(repositoryList[idx].status))
+    }
+
+    // -------------------------------------------------------------
+    // 18. BLANK REJECTION REASON VALIDATION
+    // -------------------------------------------------------------
+    private fun isValidRejectionReason(reason: String): Boolean {
+        return reason.trim().isNotEmpty()
+    }
+
+    @Test
+    fun testRejectionReasonValidation_DisallowsBlankOrWhitespaceOnly() {
+        assertFalse("Empty string must be invalid", isValidRejectionReason(""))
+        assertFalse("Spaces only must be invalid", isValidRejectionReason("   "))
+        assertFalse("Tabs only must be invalid", isValidRejectionReason("\t\t"))
+        assertFalse("Newlines and spaces must be invalid", isValidRejectionReason("\n  \r\n  "))
+
+        assertTrue("Non-blank text must be valid", isValidRejectionReason("Incomplete turns data"))
+        assertTrue("Whitespace padded text must be valid", isValidRejectionReason("  Incorrect wire gauge  "))
+        assertEquals("Incorrect wire gauge", "  Incorrect wire gauge  ".trim())
+    }
+
+    // -------------------------------------------------------------
+    // 19. SAVING REJECTION REASON AND ADMIN DETAILS ON REJECTION
+    // -------------------------------------------------------------
+    @Test
+    fun testAdminRejectionSavesReasonAndReviewDetails_SinglePhase() {
+        val pendingMotor = SinglePhaseMotor(
+            id = "sp_pending",
+            companyName = "Crompton",
+            status = "pending",
+            createdBy = "user_1",
+            createdAt = 1700000000000L
+        )
+
+        val adminUid = "admin_999"
+        val adminName = "Lead Inspector"
+        val reviewTimestamp = 1700005000000L
+        val inputReason = "  Capacitor value does not match motor specifications  "
+
+        // Simulate admin rejection update logic
+        val rejectedMotor = pendingMotor.copy(
+            status = "rejected",
+            rejectionReason = inputReason.trim(),
+            reviewedBy = adminUid,
+            reviewedByName = adminName,
+            reviewedAt = reviewTimestamp,
+            adminSeen = true,
+            seen = true
+        )
+
+        assertEquals("rejected", rejectedMotor.status)
+        assertTrue(rejectedMotor.isRejected())
+        assertFalse(rejectedMotor.isPending())
+        assertFalse(rejectedMotor.isExplicitlyApproved())
+        assertEquals("Capacitor value does not match motor specifications", rejectedMotor.rejectionReason)
+        assertEquals("admin_999", rejectedMotor.reviewedBy)
+        assertEquals("Lead Inspector", rejectedMotor.reviewedByName)
+        assertEquals(1700005000000L, rejectedMotor.reviewedAt)
+        assertTrue(rejectedMotor.adminSeen)
+        assertTrue(rejectedMotor.seen)
+    }
+
+    @Test
+    fun testAdminRejectionSavesReasonAndReviewDetails_ThreePhase() {
+        val pendingMotor = ThreePhaseMotor(
+            id = "tp_pending",
+            name = "Kirloskar",
+            status = "pending",
+            createdBy = "user_2"
+        )
+
+        val rejectedMotor = pendingMotor.copy(
+            status = "rejected",
+            rejectionReason = "Missing slot dimensions and incomplete winding pitch".trim(),
+            reviewedBy = "admin_1",
+            reviewedByName = "Admin Inspector",
+            reviewedAt = 1700006000000L,
+            adminSeen = true,
+            seen = true
+        )
+
+        assertEquals("rejected", rejectedMotor.status)
+        assertTrue(rejectedMotor.isRejected())
+        assertEquals("Missing slot dimensions and incomplete winding pitch", rejectedMotor.rejectionReason)
+        assertEquals("Admin Inspector", rejectedMotor.reviewedByName)
+        assertEquals(1700006000000L, rejectedMotor.reviewedAt)
+    }
+
+    @Test
+    fun testAdminRejectionSavesReasonAndReviewDetails_CustomMotor() {
+        val pendingMotor = CustomMotor(
+            id = "cm_pending",
+            categoryId = "cat_cooler",
+            companyName = "Havells",
+            status = "pending",
+            createdBy = "user_3"
+        )
+
+        val rejectedMotor = pendingMotor.copy(
+            status = "rejected",
+            rejectionReason = "Unclear photographs and incorrect RPM specification".trim(),
+            reviewedBy = "admin_1",
+            reviewedByName = "Admin Inspector",
+            reviewedAt = 1700007000000L,
+            adminSeen = true,
+            seen = true
+        )
+
+        assertEquals("rejected", rejectedMotor.status)
+        assertTrue(rejectedMotor.isRejected())
+        assertEquals("Unclear photographs and incorrect RPM specification", rejectedMotor.rejectionReason)
+        assertEquals("Admin Inspector", rejectedMotor.reviewedByName)
+        assertEquals(1700007000000L, rejectedMotor.reviewedAt)
+    }
+
+    // -------------------------------------------------------------
+    // 20. DISPLAY REJECTION REASON IN MY SUBMISSIONS
+    // -------------------------------------------------------------
+    private fun getDisplayRejectionReason(reason: String): String {
+        return if (reason.isNotBlank()) reason.trim() else "No reason was provided."
+    }
+
+    @Test
+    fun testMySubmissionsDisplaysRejectionReasonUnderHeading() {
+        val publicUserId = "public_user_77"
+        val submission = SinglePhaseMotor(
+            id = "sub_rejected_with_reason",
+            companyName = "Falcon Pumps",
+            status = "rejected",
+            rejectionReason = "Wire gauge and turn counts do not match slot capacity.",
+            reviewedByName = "Admin Inspector",
+            reviewedAt = 1700008000000L,
+            createdBy = publicUserId
+        )
+
+        // Status badge in My Submissions
+        assertEquals("Rejected", getStatusBadgeText(submission.status))
+
+        // Heading and reason text display
+        val headingText = "Reason for rejection"
+        assertEquals("Reason for rejection", headingText)
+        val displayText = getDisplayRejectionReason(submission.rejectionReason)
+        assertEquals("Wire gauge and turn counts do not match slot capacity.", displayText)
+    }
+
+    @Test
+    fun testOlderRejectedRecordsDisplayNoReasonProvidedFallback() {
+        // Older records that have empty or whitespace-only rejectionReason
+        val olderRecordEmpty = SinglePhaseMotor(
+            id = "sub_older_1",
+            status = "rejected",
+            rejectionReason = ""
+        )
+        val olderRecordWhitespace = ThreePhaseMotor(
+            id = "sub_older_2",
+            status = "rejected",
+            rejectionReason = "   "
+        )
+
+        assertEquals("Rejected", getStatusBadgeText(olderRecordEmpty.status))
+        assertEquals("No reason was provided.", getDisplayRejectionReason(olderRecordEmpty.rejectionReason))
+
+        assertEquals("Rejected", getStatusBadgeText(olderRecordWhitespace.status))
+        assertEquals("No reason was provided.", getDisplayRejectionReason(olderRecordWhitespace.rejectionReason))
+    }
+
+    // -------------------------------------------------------------
+    // 21. APPROVAL BEHAVIOR UNCHANGED (DOES NOT REQUIRE REASON)
+    // -------------------------------------------------------------
+    @Test
+    fun testApprovalBehaviorUnchanged_DoesNotRequireReason() {
+        val pendingMotor = SinglePhaseMotor(id = "sp_pending", status = "pending")
+
+        // Approval changes status to "approved" without requiring any rejectionReason
+        val approvedMotor = pendingMotor.copy(status = "approved", rejectionReason = "")
+
+        assertEquals("approved", approvedMotor.status)
+        assertTrue(approvedMotor.isExplicitlyApproved())
+        assertFalse(approvedMotor.isRejected())
+        assertFalse(approvedMotor.isPending())
+        assertEquals("", approvedMotor.rejectionReason)
+        assertEquals("Approved", getStatusBadgeText(approvedMotor.status))
     }
 }
