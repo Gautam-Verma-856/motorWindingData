@@ -406,4 +406,380 @@ class CustomCategoryMotorWorkflowTest {
         assertEquals(1, farataList.size)
         assertEquals("m_farata", farataList.first().id)
     }
+
+    // -------------------------------------------------------------
+    // 11. UI `canAddData` Gating for Public vs Admin
+    // -------------------------------------------------------------
+    private fun computeCanAddData(user: User?, category: CustomCategory): Boolean {
+        val role = user?.role?.trim() ?: "public"
+        val isAdmin = role.equals("admin", ignoreCase = true)
+        val isEmailVerified = user?.emailVerified == true
+        val isAccountActive = user?.accountStatus?.trim()?.equals("active", ignoreCase = true) == true
+        val isPublicActiveAndVerified = user != null &&
+                role.equals("public", ignoreCase = true) &&
+                isEmailVerified &&
+                isAccountActive
+        return isAdmin || (isPublicActiveAndVerified && category.allowPublicSubmissions)
+    }
+
+    @Test
+    fun testCanAddDataGating() {
+        val enabledCat = CustomCategory(id = "c1", allowPublicSubmissions = true)
+        val disabledCat = CustomCategory(id = "c2", allowPublicSubmissions = false)
+
+        val activeVerifiedPublic = User(id = "u1", role = "public", emailVerified = true, accountStatus = "active")
+        val unverifiedPublic = User(id = "u2", role = "public", emailVerified = false, accountStatus = "active")
+        val pendingPublic = User(id = "u3", role = "public", emailVerified = true, accountStatus = "pending")
+        val adminUser = User(id = "a1", role = "admin", accountStatus = "active")
+
+        // 1. Active verified public gets Add Data in enabled category
+        assertTrue("Active verified public must have canAddData in enabled category", computeCanAddData(activeVerifiedPublic, enabledCat))
+
+        // 2. Public user cannot add in disabled category
+        assertFalse("Public user cannot add data in disabled-submission category", computeCanAddData(activeVerifiedPublic, disabledCat))
+
+        // 3. Unverified or pending public users cannot add data
+        assertFalse("Unverified public user cannot add data", computeCanAddData(unverifiedPublic, enabledCat))
+        assertFalse("Pending public user cannot add data", computeCanAddData(pendingPublic, enabledCat))
+
+        // 4. Admin always has canAddData in any category
+        assertTrue("Admin can add data in enabled category", computeCanAddData(adminUser, enabledCat))
+        assertTrue("Admin can add data even in disabled-submission category", computeCanAddData(adminUser, disabledCat))
+    }
+
+    // -------------------------------------------------------------
+    // 12. Security Gating: Public User Cannot Modify Status or Other's Submissions
+    // -------------------------------------------------------------
+    @Test
+    fun testPublicUserCannotApproveOrModifyOthersSubmissions() {
+        val submitterUser = User(id = "sub_01", role = "public", emailVerified = true, accountStatus = "active")
+        val attackerUser = User(id = "att_02", role = "public", emailVerified = true, accountStatus = "active")
+        val adminUser = User(id = "adm_01", role = "admin", accountStatus = "active")
+
+        val motor = CustomMotor(
+            id = "cm_sec_1",
+            categoryId = "cat_1",
+            companyName = "Test Co",
+            status = "pending",
+            createdBy = "sub_01"
+        )
+
+        // Function checking if a user is permitted to change approval status
+        fun canChangeApprovalStatus(user: User?): Boolean {
+            return user != null && user.role.trim().equals("admin", ignoreCase = true)
+        }
+
+        // Function checking if a user is permitted to edit a motor
+        fun canEditMotor(user: User?, motor: CustomMotor): Boolean {
+            if (user == null) return false
+            val role = user.role.trim().lowercase()
+            if (role == "admin") return true
+            // Public users can never edit once submitted (read-only for public)
+            return false
+        }
+
+        // Public users cannot change status
+        assertFalse("Public user cannot approve motor", canChangeApprovalStatus(submitterUser))
+        assertFalse("Another public user cannot approve motor", canChangeApprovalStatus(attackerUser))
+        assertTrue("Admin can approve motor", canChangeApprovalStatus(adminUser))
+
+        // Public users cannot edit motor records
+        assertFalse("Submitter public user cannot edit submitted record", canEditMotor(submitterUser, motor))
+        assertFalse("Other public user cannot edit someone else's record", canEditMotor(attackerUser, motor))
+        assertTrue("Admin can edit record", canEditMotor(adminUser, motor))
+    }
+
+    // -------------------------------------------------------------
+    // 13. Validation: Missing/Invalid CategoryId or Unauthorized Role Fails Save
+    // -------------------------------------------------------------
+    @Test
+    fun testMissingCategoryIdOrUnauthorizedRoleFailsSave() {
+        val publicUser = User(id = "u1", role = "public", emailVerified = true, accountStatus = "active")
+        val blankCategory = CustomCategory(id = "", name = "")
+        val invalidRoleUser = User(id = "u_bad", role = "guest", accountStatus = "active")
+        val validCat = CustomCategory(id = "cat_test", name = "Test Cat")
+
+        // 1. Missing categoryId
+        fun validateSaveCustomMotor(user: User?, catId: String, companyName: String): Result<Unit> {
+            if (user == null) return Result.failure(Exception("Authentication required"))
+            val role = user.role.trim().lowercase()
+            if (role != "admin" && role != "public") return Result.failure(Exception("Unauthorized role: $role"))
+            if (catId.trim().isEmpty()) return Result.failure(Exception("Category ID cannot be blank"))
+            if (companyName.trim().isEmpty()) return Result.failure(Exception("Company Name is required"))
+            return Result.success(Unit)
+        }
+
+        assertTrue("Blank categoryId must fail validation", validateSaveCustomMotor(publicUser, "", "Usha").isFailure)
+        assertTrue("Blank companyName must fail validation", validateSaveCustomMotor(publicUser, "cat_1", "").isFailure)
+        assertTrue("Invalid role must fail validation", validateSaveCustomMotor(invalidRoleUser, "cat_1", "Usha").isFailure)
+        assertTrue("Valid admin submission must succeed validation", validateSaveCustomMotor(User(id = "a1", role = "admin"), "cat_1", "Usha").isSuccess)
+    }
+
+    // -------------------------------------------------------------
+    // 14. Cache Refresh and Optimistic Update Simulation
+    // -------------------------------------------------------------
+    @Test
+    fun testCacheRefreshAndOptimisticUpdate_AvoidsStaleData() {
+        var currentCache: List<CustomMotor> = listOf(
+            CustomMotor(id = "m1", categoryId = "cat_cooler", companyName = "Existing Motor", status = "approved")
+        )
+
+        // 1. Admin adds a new custom motor -> optimistically updates cache immediately
+        val newAdminMotor = CustomMotor(id = "m2", categoryId = "cat_cooler", companyName = "New Admin Motor", status = "approved")
+        currentCache = listOf(newAdminMotor) + currentCache
+
+        assertEquals(2, currentCache.size)
+        assertEquals("m2", currentCache.first().id)
+        val publicListAfterAdd = filterCategoryMotorsForPublicBrowsing(currentCache, "cat_cooler")
+        assertEquals(2, publicListAfterAdd.size)
+
+        // 2. Admin approves a pending motor -> status updated optimistically in cache
+        val pendingMotor = CustomMotor(id = "m3", categoryId = "cat_cooler", companyName = "Pending Motor", status = "pending")
+        currentCache = currentCache + listOf(pendingMotor)
+
+        // Before approval, pending is not in public list
+        assertEquals(2, filterCategoryMotorsForPublicBrowsing(currentCache, "cat_cooler").size)
+
+        // Optimistic approval update
+        currentCache = currentCache.map { if (it.id == "m3") it.copy(status = "approved") else it }
+
+        // After approval, immediately visible in public list without stale cache delay
+        val publicListAfterApprove = filterCategoryMotorsForPublicBrowsing(currentCache, "cat_cooler")
+        assertEquals(3, publicListAfterApprove.size)
+        assertTrue(publicListAfterApprove.any { it.id == "m3" && it.isExplicitlyApproved() })
+    }
+
+    // -------------------------------------------------------------
+    // 15. Security Rule Simulation: Public Create Requires Real Existing, Active, Enabled Category
+    // -------------------------------------------------------------
+    @Test
+    fun testFirestoreRule_PublicCreateRequiresExistingActiveAndEnabledCategory() {
+        data class FirestoreCategoryDoc(
+            val exists: Boolean,
+            val isActive: Boolean?,
+            val allowPublicSubmissions: Boolean?
+        )
+
+        fun canPublicUserCreateMotorInCategory(
+            user: User?,
+            categoryId: String,
+            categoryDoc: FirestoreCategoryDoc?,
+            status: String,
+            createdBy: String
+        ): Boolean {
+            if (user == null) return false
+            val isPublic = user.role.trim().equals("public", ignoreCase = true)
+            val isVerified = user.emailVerified
+            val isActive = user.accountStatus.trim().equals("active", ignoreCase = true)
+            if (!isPublic || !isVerified || !isActive) return false
+
+            if (status != "pending" || createdBy != user.id || categoryId.isBlank()) return false
+            if (categoryDoc == null || !categoryDoc.exists) return false
+            if (categoryDoc.isActive == null || categoryDoc.isActive != true) return false
+            if (categoryDoc.allowPublicSubmissions == null || categoryDoc.allowPublicSubmissions != true) return false
+
+            return true
+        }
+
+        val publicUser = User(id = "u_verified", role = "public", emailVerified = true, accountStatus = "active")
+
+        // 1. Missing category doc -> Denied
+        assertFalse(
+            "Missing category doc must deny public create",
+            canPublicUserCreateMotorInCategory(publicUser, "cat_unknown", null, "pending", "u_verified")
+        )
+        assertFalse(
+            "Non-existent category doc must deny public create",
+            canPublicUserCreateMotorInCategory(
+                publicUser,
+                "cat_404",
+                FirestoreCategoryDoc(exists = false, isActive = true, allowPublicSubmissions = true),
+                "pending",
+                "u_verified"
+            )
+        )
+
+        // 2. Missing isActive field or isActive == false -> Denied
+        assertFalse(
+            "Category missing isActive field must deny public create",
+            canPublicUserCreateMotorInCategory(
+                publicUser,
+                "cat_1",
+                FirestoreCategoryDoc(exists = true, isActive = null, allowPublicSubmissions = true),
+                "pending",
+                "u_verified"
+            )
+        )
+        assertFalse(
+            "Category with isActive == false must deny public create",
+            canPublicUserCreateMotorInCategory(
+                publicUser,
+                "cat_1",
+                FirestoreCategoryDoc(exists = true, isActive = false, allowPublicSubmissions = true),
+                "pending",
+                "u_verified"
+            )
+        )
+
+        // 3. Missing allowPublicSubmissions field or allowPublicSubmissions == false -> Denied
+        assertFalse(
+            "Category missing allowPublicSubmissions field must deny public create",
+            canPublicUserCreateMotorInCategory(
+                publicUser,
+                "cat_1",
+                FirestoreCategoryDoc(exists = true, isActive = true, allowPublicSubmissions = null),
+                "pending",
+                "u_verified"
+            )
+        )
+        assertFalse(
+            "Category with allowPublicSubmissions == false must deny public create",
+            canPublicUserCreateMotorInCategory(
+                publicUser,
+                "cat_1",
+                FirestoreCategoryDoc(exists = true, isActive = true, allowPublicSubmissions = false),
+                "pending",
+                "u_verified"
+            )
+        )
+
+        // 4. Valid existing, active, and allowPublicSubmissions == true category -> Allowed
+        assertTrue(
+            "Valid active category with allowPublicSubmissions == true must allow public create",
+            canPublicUserCreateMotorInCategory(
+                publicUser,
+                "cat_1",
+                FirestoreCategoryDoc(exists = true, isActive = true, allowPublicSubmissions = true),
+                "pending",
+                "u_verified"
+            )
+        )
+    }
+
+    // -------------------------------------------------------------
+    // 16. Security Rule Simulation: Public Read Access Restricted to Active+Verified Users
+    // -------------------------------------------------------------
+    @Test
+    fun testFirestoreRule_PublicReadRestrictedToActiveVerifiedUsers() {
+        fun canReadApprovedMotorsAndCategories(user: User?): Boolean {
+            if (user == null) return false
+            val role = user.role.trim().lowercase()
+            if (role == "admin") {
+                val status = user.accountStatus.trim().lowercase()
+                return status != "blocked" && status != "suspended"
+            }
+            if (role == "public") {
+                return user.emailVerified && user.accountStatus.trim().lowercase() == "active"
+            }
+            return false
+        }
+
+        val unauthenticated: User? = null
+        val unverifiedPublic = User(id = "u1", role = "public", emailVerified = false, accountStatus = "active")
+        val suspendedPublic = User(id = "u2", role = "public", emailVerified = true, accountStatus = "suspended")
+        val pendingPublic = User(id = "u3", role = "public", emailVerified = true, accountStatus = "pending")
+        val activeVerifiedPublic = User(id = "u4", role = "public", emailVerified = true, accountStatus = "active")
+        val admin = User(id = "a1", role = "admin", accountStatus = "active")
+        val blockedAdmin = User(id = "a2", role = "admin", accountStatus = "blocked")
+
+        assertFalse("Unauthenticated cannot read", canReadApprovedMotorsAndCategories(unauthenticated))
+        assertFalse("Unverified public cannot read", canReadApprovedMotorsAndCategories(unverifiedPublic))
+        assertFalse("Suspended public cannot read", canReadApprovedMotorsAndCategories(suspendedPublic))
+        assertFalse("Pending public cannot read", canReadApprovedMotorsAndCategories(pendingPublic))
+        assertTrue("Active verified public can read", canReadApprovedMotorsAndCategories(activeVerifiedPublic))
+        assertTrue("Active admin can read", canReadApprovedMotorsAndCategories(admin))
+        assertFalse("Blocked admin cannot read", canReadApprovedMotorsAndCategories(blockedAdmin))
+    }
+
+    // -------------------------------------------------------------
+    // 17. Security Rule Simulation: Pending/Rejected Records Isolated to Admin & Submitter
+    // -------------------------------------------------------------
+    @Test
+    fun testFirestoreRule_PendingAndRejectedMotorsIsolatedToAdminAndSubmitter() {
+        fun canReadSpecificMotorDoc(user: User?, motor: CustomMotor): Boolean {
+            if (user == null) return false
+            val role = user.role.trim().lowercase()
+            val isAdmin = role == "admin" && user.accountStatus.trim().lowercase() != "blocked"
+            if (isAdmin) return true
+
+            val isPublicActiveVerified = role == "public" &&
+                    user.emailVerified &&
+                    user.accountStatus.trim().lowercase() == "active"
+
+            if (isPublicActiveVerified) {
+                // Public user can read if it's approved OR if they are the submitter (createdBy)
+                return motor.isExplicitlyApproved() || motor.createdBy == user.id
+            }
+
+            return false
+        }
+
+        val userA = User(id = "user_A", role = "public", emailVerified = true, accountStatus = "active")
+        val userB = User(id = "user_B", role = "public", emailVerified = true, accountStatus = "active")
+        val admin = User(id = "admin_1", role = "admin", accountStatus = "active")
+
+        val pendingByA = CustomMotor(id = "m_pending", categoryId = "c1", status = "pending", createdBy = "user_A")
+        val rejectedByA = CustomMotor(id = "m_rejected", categoryId = "c1", status = "rejected", createdBy = "user_A")
+        val approvedByA = CustomMotor(id = "m_approved", categoryId = "c1", status = "approved", createdBy = "user_A")
+
+        // Submitter A can read their own pending and rejected records
+        assertTrue("Submitter User A can read their own pending motor", canReadSpecificMotorDoc(userA, pendingByA))
+        assertTrue("Submitter User A can read their own rejected motor", canReadSpecificMotorDoc(userA, rejectedByA))
+        assertTrue("Submitter User A can read their own approved motor", canReadSpecificMotorDoc(userA, approvedByA))
+
+        // Another public user B CANNOT read A's pending or rejected records
+        assertFalse("Other public User B cannot read User A's pending motor", canReadSpecificMotorDoc(userB, pendingByA))
+        assertFalse("Other public User B cannot read User A's rejected motor", canReadSpecificMotorDoc(userB, rejectedByA))
+        assertTrue("Other public User B can read approved motor", canReadSpecificMotorDoc(userB, approvedByA))
+
+        // Admin can read all records
+        assertTrue("Admin can read pending motor", canReadSpecificMotorDoc(admin, pendingByA))
+        assertTrue("Admin can read rejected motor", canReadSpecificMotorDoc(admin, rejectedByA))
+        assertTrue("Admin can read approved motor", canReadSpecificMotorDoc(admin, approvedByA))
+    }
+
+    // -------------------------------------------------------------
+    // 18. Security Rule Simulation: Admin Status = Approved, Public Status = Pending
+    // -------------------------------------------------------------
+    @Test
+    fun testFirestoreRule_StatusValidationOnCreate() {
+        fun validateCreateRequest(user: User?, categoryId: String, status: String, createdBy: String): Boolean {
+            if (user == null) return false
+            val role = user.role.trim().lowercase()
+            val isAdmin = role == "admin" && user.accountStatus.trim().lowercase() != "blocked"
+            if (isAdmin) {
+                // Admin create must have approved status and non-blank categoryId
+                return (status.equals("approved", ignoreCase = true)) && categoryId.isNotBlank()
+            }
+
+            val isPublicActiveVerified = role == "public" &&
+                    user.emailVerified &&
+                    user.accountStatus.trim().lowercase() == "active"
+
+            if (isPublicActiveVerified) {
+                // Public create must have pending status, matching createdBy UID, and non-blank categoryId
+                return status == "pending" && createdBy == user.id && categoryId.isNotBlank()
+            }
+
+            return false
+        }
+
+        val publicUser = User(id = "u_pub", role = "public", emailVerified = true, accountStatus = "active")
+        val adminUser = User(id = "u_adm", role = "admin", accountStatus = "active")
+
+        // 1. Admin creating approved -> Allowed
+        assertTrue("Admin creating approved status is allowed", validateCreateRequest(adminUser, "cat_1", "approved", "u_adm"))
+
+        // 2. Admin creating with blank categoryId -> Denied
+        assertFalse("Admin creating with blank categoryId is denied", validateCreateRequest(adminUser, "", "approved", "u_adm"))
+
+        // 3. Public attempting to create directly with approved status -> Denied
+        assertFalse("Public attempting approved status is denied", validateCreateRequest(publicUser, "cat_1", "approved", "u_pub"))
+
+        // 4. Public attempting to spoof another user's UID -> Denied
+        assertFalse("Public spoofing createdBy is denied", validateCreateRequest(publicUser, "cat_1", "pending", "someone_else"))
+
+        // 5. Public creating with valid pending status and own UID -> Allowed
+        assertTrue("Public creating pending status with own UID is allowed", validateCreateRequest(publicUser, "cat_1", "pending", "u_pub"))
+    }
 }

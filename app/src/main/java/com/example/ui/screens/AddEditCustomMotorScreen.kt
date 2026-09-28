@@ -408,7 +408,11 @@ fun AddEditCustomMotorScreen(
                         return@Button
                     }
 
-                    if (isPublic && (user?.emailVerified != true || user?.accountStatus?.trim()?.equals("active", ignoreCase = true) != true)) {
+                    val isVerified = user?.emailVerified == true ||
+                            (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.isEmailVerified == true)
+                    val isAccountActive = user?.accountStatus?.trim()?.equals("active", ignoreCase = true) == true
+
+                    if (isPublic && (!isVerified || !isAccountActive)) {
                         Toast.makeText(context, "Only active, email-verified accounts can submit motor data.", Toast.LENGTH_LONG).show()
                         return@Button
                     }
@@ -420,14 +424,14 @@ fun AddEditCustomMotorScreen(
 
                     isUploading = true
                     val authUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
-                    val currentUid = user?.id?.ifBlank { authUid } ?: authUid
-                    val currentUserName = user?.name?.ifBlank { "Public User" } ?: "Public User"
+                    val currentUid = if (isPublic) authUid else (user?.id?.ifBlank { authUid } ?: authUid)
+                    val currentUserName = user?.name?.ifBlank { if (isPublic) "Public User" else "Admin" } ?: if (isPublic) "Public User" else "Admin"
 
                     val finalStatus = if (isPublic) "pending" else if (actualId.isNotEmpty()) existingStatus.ifBlank { "approved" } else "approved"
                     val finalCreatedBy = if (isPublic) {
-                        currentUid
+                        authUid
                     } else {
-                        if (actualId.isNotEmpty()) existingCreatedBy.ifEmpty { currentUid } else currentUid
+                        if (actualId.isNotEmpty()) existingCreatedBy.ifEmpty { authUid } else authUid
                     }
                     val finalCreatedByName = if (isPublic) {
                         currentUserName
@@ -459,8 +463,8 @@ fun AddEditCustomMotorScreen(
 
                         val customMotor = CustomMotor(
                             id = actualId,
-                            categoryId = category.id,
-                            categoryName = category.name,
+                            categoryId = category.id.trim(),
+                            categoryName = category.name.trim(),
                             companyName = companyName.trim(),
                             motorName = motorName.trim(),
                             hp = hp.trim(),

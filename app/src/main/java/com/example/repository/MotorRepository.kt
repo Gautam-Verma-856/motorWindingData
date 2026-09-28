@@ -558,11 +558,12 @@ class MotorRepository {
         return try {
             val id = motor.id.ifEmpty { db.collection("custom_motors").document().id }
             val currentUid = authUser.uid
-            val statusToSave = motor.status.ifBlank { "pending" }
+            val statusToSave = motor.status.ifBlank { "pending" }.trim().lowercase()
             val motorToSave = motor.copy(
                 id = id,
+                categoryId = motor.categoryId.trim(),
                 status = statusToSave,
-                createdBy = motor.createdBy.ifEmpty { currentUid },
+                createdBy = if (statusToSave == "pending") currentUid else motor.createdBy.ifEmpty { currentUid },
                 createdAt = if (motor.createdAt == 0L) System.currentTimeMillis() else motor.createdAt
             )
             db.collection("custom_motors").document(id).set(motorToSave).await()
@@ -583,10 +584,17 @@ class MotorRepository {
                 val query = db.collection("custom_motors").get().await()
                 Result.success(query.toObjects(CustomMotor::class.java))
             } else {
-                val approvedSnap = db.collection("custom_motors")
-                    .whereEqualTo("status", "approved")
-                    .get().await()
-                val approvedMotors = approvedSnap.toObjects(CustomMotor::class.java).filter { it.isExplicitlyApproved() }
+                val approvedMotors = try {
+                    val approvedSnap = db.collection("custom_motors")
+                        .whereIn("status", listOf("approved", "Approved", "APPROVED"))
+                        .get().await()
+                    approvedSnap.toObjects(CustomMotor::class.java).filter { it.isExplicitlyApproved() }
+                } catch (_: Exception) {
+                    val fallbackSnap = db.collection("custom_motors")
+                        .whereEqualTo("status", "approved")
+                        .get().await()
+                    fallbackSnap.toObjects(CustomMotor::class.java).filter { it.isExplicitlyApproved() }
+                }
                 
                 val userMotors = if (effectiveUid.isNotEmpty()) {
                     try {

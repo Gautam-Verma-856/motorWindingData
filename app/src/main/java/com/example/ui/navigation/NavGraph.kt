@@ -198,7 +198,8 @@ fun NavGraph() {
                     navController = navController,
                     motorViewModel = motorViewModel,
                     id = id,
-                    role = currentUser?.role ?: "public"
+                    role = currentUser?.role ?: "public",
+                    currentUser = currentUser
                 )
             }
         }

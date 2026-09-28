@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -54,14 +55,19 @@ fun CustomMotorListScreen(
     val customMotors by motorViewModel.customMotors.collectAsState()
     val uiState by motorViewModel.uiState.collectAsState()
 
-    val category = customCategories.find { it.id == categoryId } ?: CustomCategory(id = categoryId, name = "Custom Motor")
-    val role = currentUser?.role ?: "public"
+    val category = customCategories.find { it.id.trim().equals(categoryId.trim(), ignoreCase = true) } 
+        ?: CustomCategory(id = categoryId.trim(), name = "Custom Motor")
+    val role = currentUser?.role?.trim() ?: "public"
+    val isAdmin = role.equals("admin", ignoreCase = true)
 
+    val isEmailVerified = currentUser?.emailVerified == true ||
+            (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.isEmailVerified == true)
+    val isAccountActive = currentUser?.accountStatus?.trim()?.equals("active", ignoreCase = true) == true
     val isPublicActiveAndVerified = currentUser != null &&
-            currentUser.role.trim().equals("public", ignoreCase = true) &&
-            currentUser.emailVerified &&
-            currentUser.accountStatus.trim().equals("active", ignoreCase = true)
-    val canAddData = (role == "admin") || (isPublicActiveAndVerified && category.allowPublicSubmissions)
+            role.equals("public", ignoreCase = true) &&
+            isEmailVerified &&
+            isAccountActive
+    val canAddData = isAdmin || (isPublicActiveAndVerified && category.allowPublicSubmissions)
 
     var selectedCompany by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
@@ -133,11 +139,14 @@ fun CustomMotorListScreen(
 
     // Filter motors belonging to this category
     // In public browsing (role != "admin"), only explicitly approved records are included
-    val categoryMotors = remember(customMotors, categoryId, role) {
-        if (role == "admin") {
-            customMotors.filter { it.categoryId == categoryId }
+    val categoryMotors = remember(customMotors, categoryId, isAdmin) {
+        val trimmedCategoryId = categoryId.trim()
+        if (isAdmin) {
+            customMotors.filter { it.categoryId.trim().equals(trimmedCategoryId, ignoreCase = true) }
         } else {
-            customMotors.filter { it.categoryId == categoryId && it.isExplicitlyApproved() }
+            customMotors.filter { 
+                it.categoryId.trim().equals(trimmedCategoryId, ignoreCase = true) && it.isExplicitlyApproved() 
+            }
         }
     }
 
@@ -160,7 +169,7 @@ fun CustomMotorListScreen(
                 motor.hp.contains(searchQuery, ignoreCase = true) ||
                 motor.customFields.values.any { it.contains(searchQuery, ignoreCase = true) }
 
-        val isAuthorizedToSee = if (role == "admin") {
+        val isAuthorizedToSee = if (isAdmin) {
             true
         } else {
             motor.isExplicitlyApproved()
@@ -281,6 +290,35 @@ fun CustomMotorListScreen(
                 }
             }
 
+            if (!isAdmin && !category.allowPublicSubmissions) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "इस Category में Public submissions उपलब्ध नहीं हैं। केवल Admin द्वारा स्वीकृत डेटा ही प्रदर्शित किया जाता है।",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             // LIST OF MOTORS
             if (displayedMotors.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -320,6 +358,14 @@ fun CustomMotorListScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Add Motor Data")
                             }
+                        } else if (!isAdmin && !category.allowPublicSubmissions) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                "इस category में public submissions उपलब्ध नहीं हैं।",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

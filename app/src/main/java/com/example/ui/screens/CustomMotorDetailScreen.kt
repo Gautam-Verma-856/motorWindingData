@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.model.User
 import com.example.ui.components.FullScreenImageViewer
 import com.example.viewmodel.MotorViewModel
 import java.text.SimpleDateFormat
@@ -35,17 +37,30 @@ fun CustomMotorDetailScreen(
     navController: NavController,
     motorViewModel: MotorViewModel,
     id: String,
-    role: String
+    role: String,
+    currentUser: User? = null
 ) {
     val customMotors by motorViewModel.customMotors.collectAsState()
+    val customCategories by motorViewModel.customCategories.collectAsState()
     val motor = customMotors.find { it.id == id }
+    val category = customCategories.find { it.id.trim().equals(motor?.categoryId?.trim() ?: "", ignoreCase = true) }
+
+    val isAdmin = role.trim().equals("admin", ignoreCase = true)
+    val isEmailVerified = currentUser?.emailVerified == true ||
+            (com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.isEmailVerified == true)
+    val isAccountActive = currentUser?.accountStatus?.trim()?.equals("active", ignoreCase = true) == true
+    val isPublicActiveAndVerified = currentUser != null &&
+            currentUser.role.trim().equals("public", ignoreCase = true) &&
+            isEmailVerified &&
+            isAccountActive
+    val canAddData = isAdmin || (isPublicActiveAndVerified && (category?.allowPublicSubmissions != false))
 
     var fullScreenPhotos by remember { mutableStateOf<List<String>?>(null) }
     var fullScreenInitialIndex by remember { mutableIntStateOf(0) }
     var showRejectDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(id) {
-        if (role == "admin") {
+        if (isAdmin) {
             motorViewModel.markMotorAsSeen("custom", id)
         }
     }
@@ -77,7 +92,14 @@ fun CustomMotorDetailScreen(
                     }
                 },
                 actions = {
-                    if (role == "admin" && motor != null) {
+                    if (canAddData && motor != null) {
+                        IconButton(onClick = {
+                            navController.navigate("add_edit_custom_motor/${motor.categoryId}/new")
+                        }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Motor Data", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    if (isAdmin && motor != null) {
                         IconButton(onClick = {
                             navController.navigate("add_edit_custom_motor/${motor.categoryId}/${motor.id}")
                         }) {

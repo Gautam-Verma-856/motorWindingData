@@ -34,11 +34,17 @@ service cloud.firestore {
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == "active"
           || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == "ACTIVE"
           || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == "Active"
+        )
+        && (
+          request.auth.token.email_verified == true
+          || (
+            'emailVerified' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true
+          )
         );
     }
 
     match /users/{userId} {
-
       allow read: if request.auth != null
         && (request.auth.uid == userId || isAdmin());
 
@@ -58,7 +64,6 @@ service cloud.firestore {
     }
 
     match /single_phase_motors/{motorId} {
-
       allow read: if isAdmin()
         || (
           request.auth != null
@@ -85,7 +90,6 @@ service cloud.firestore {
     }
 
     match /three_phase_motors/{motorId} {
-
       allow read: if isAdmin()
         || (
           request.auth != null
@@ -114,33 +118,50 @@ service cloud.firestore {
     match /custom_categories/{categoryId} {
       allow read: if isAdmin()
         || (
-          request.auth != null
-          && resource.data.isActive == true
+          isActivePublicUser()
+          && (
+            !('isActive' in resource.data)
+            || resource.data.isActive == true
+          )
         );
+
       allow create, update, delete: if isAdmin();
     }
 
     match /custom_motors/{motorId} {
       allow read: if isAdmin()
         || (
-          request.auth != null
+          isActivePublicUser()
           && (
             resource.data.status == "approved"
             || resource.data.status == "APPROVED"
             || resource.data.status == "Approved"
+            || resource.data.createdBy == request.auth.uid
           )
-        )
-        || (
-          request.auth != null
-          && resource.data.createdBy == request.auth.uid
         );
 
-      allow create: if isAdmin()
+      allow create: if (
+          isAdmin()
+          && request.resource.data.categoryId is string
+          && request.resource.data.categoryId != ""
+          && (
+            request.resource.data.status == "approved"
+            || request.resource.data.status == "APPROVED"
+            || request.resource.data.status == "Approved"
+          )
+        )
         || (
           isActivePublicUser()
           && request.resource.data.status == "pending"
           && request.resource.data.createdBy == request.auth.uid
           && (!('rejectionReason' in request.resource.data) || request.resource.data.rejectionReason == "")
+          && request.resource.data.categoryId is string
+          && request.resource.data.categoryId != ""
+          && exists(/databases/$(database)/documents/custom_categories/$(request.resource.data.categoryId))
+          && 'isActive' in get(/databases/$(database)/documents/custom_categories/$(request.resource.data.categoryId)).data
+          && get(/databases/$(database)/documents/custom_categories/$(request.resource.data.categoryId)).data.isActive == true
+          && 'allowPublicSubmissions' in get(/databases/$(database)/documents/custom_categories/$(request.resource.data.categoryId)).data
+          && get(/databases/$(database)/documents/custom_categories/$(request.resource.data.categoryId)).data.allowPublicSubmissions == true
         );
 
       allow update, delete: if isAdmin();
