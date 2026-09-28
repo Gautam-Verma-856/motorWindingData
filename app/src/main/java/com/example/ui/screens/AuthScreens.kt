@@ -220,22 +220,28 @@ fun AdminLoginScreen(navController: NavController, authViewModel: AuthViewModel)
 
     LaunchedEffect(Unit) {
         visible = true
+        if (currentUser == null) {
+            authViewModel.resetState()
+        }
     }
 
     LaunchedEffect(authState) {
         when (authState) {
             is AuthState.Success -> {
                 val user = (authState as AuthState.Success).user
-                if (user.role.equals("admin", ignoreCase = true)) {
+                if (user.role.equals("admin", ignoreCase = true) && !user.accountStatus.equals("blocked", ignoreCase = true) && !user.accountStatus.equals("suspended", ignoreCase = true)) {
                     showSuccess = true
                     delay(800)
-                    navController.navigate("admin_dashboard") {
-                        popUpTo("public_login") { inclusive = true }
+                    navController.navigate("home") {
+                        popUpTo("admin_login") { inclusive = true }
                     }
                     showSuccess = false
-                } else {
-                    Toast.makeText(context, "Access Denied: Not an Admin", Toast.LENGTH_SHORT).show()
+                } else if (user.role.equals("public", ignoreCase = true)) {
                     authViewModel.logout()
+                    Toast.makeText(context, "This is a public account. Please use Public Login.", Toast.LENGTH_LONG).show()
+                } else {
+                    authViewModel.logout()
+                    Toast.makeText(context, "Access Denied: Not an Admin", Toast.LENGTH_SHORT).show()
                 }
             }
             // Error is handled by ErrorDialog composable below
@@ -245,7 +251,23 @@ fun AdminLoginScreen(navController: NavController, authViewModel: AuthViewModel)
 
     if (authState is AuthState.Error) {
         val errorMsg = (authState as AuthState.Error).message
-        if (errorMsg.startsWith("Account Pending Approval:")) {
+        if (errorMsg.contains("This is a public account", ignoreCase = true)) {
+            AuthStatusDialog(
+                statusTitle = "PUBLIC ACCOUNT",
+                statusMessage = "This is a public account. Please use Public Login.",
+                icon = Icons.Rounded.Person,
+                iconColor = Color(0xFF06B6D4),
+                iconBgColor = Color(0xFF06B6D4).copy(alpha = 0.2f),
+                actionButtonText = "Go to Public Login",
+                onAction = {
+                    authViewModel.resetState()
+                    navController.navigate("public_login") {
+                        popUpTo("admin_login") { inclusive = true }
+                    }
+                },
+                onDismiss = { authViewModel.resetState() }
+            )
+        } else if (errorMsg.startsWith("Account Pending Approval:")) {
             AuthStatusDialog(
                 statusTitle = "PENDING APPROVAL",
                 statusMessage = "Your account has been created but is waiting for Admin approval.",
@@ -358,7 +380,7 @@ fun AdminLoginScreen(navController: NavController, authViewModel: AuthViewModel)
                 
                 GlassLoginButton(
                     text = "Login",
-                    onClick = { authViewModel.login(email.trim(), password) },
+                    onClick = { authViewModel.loginAdmin(email.trim(), password) },
                     isLoading = authState is AuthState.Loading,
                     showSuccess = showSuccess
                 )
@@ -381,24 +403,28 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
 
     LaunchedEffect(Unit) {
         visible = true
+        if (authViewModel.currentUser.value == null) {
+            authViewModel.resetState()
+        }
     }
 
     LaunchedEffect(authState) {
         when (authState) {
             is AuthState.Success -> {
                 val user = (authState as AuthState.Success).user
-                showSuccess = true
-                delay(800)
-                if (user.role.equals("admin", ignoreCase = true)) {
-                    navController.navigate("admin_dashboard") {
+                if (user.role.equals("public", ignoreCase = true) && user.emailVerified && user.accountStatus.equals("active", ignoreCase = true)) {
+                    showSuccess = true
+                    delay(800)
+                    navController.navigate("home") {
                         popUpTo("public_login") { inclusive = true }
                     }
+                    showSuccess = false
+                } else if (user.role.equals("admin", ignoreCase = true)) {
+                    authViewModel.logout()
+                    Toast.makeText(context, "This is an admin account. Please use Admin Login.", Toast.LENGTH_LONG).show()
                 } else {
-                    navController.navigate("user_dashboard") {
-                        popUpTo("public_login") { inclusive = true }
-                    }
+                    authViewModel.logout()
                 }
-                showSuccess = false
             }
             // Error is handled by ErrorDialog composable below
             else -> {}
@@ -407,7 +433,21 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
 
     if (authState is AuthState.Error) {
         val errorMsg = (authState as AuthState.Error).message
-        if (errorMsg.startsWith("Email Not Verified:")) {
+        if (errorMsg.contains("This is an admin account", ignoreCase = true)) {
+            AuthStatusDialog(
+                statusTitle = "ADMIN ACCOUNT",
+                statusMessage = "This is an admin account. Please use Admin Login.",
+                icon = Icons.Rounded.AdminPanelSettings,
+                iconColor = MaterialTheme.colorScheme.primary,
+                iconBgColor = MaterialTheme.colorScheme.primaryContainer,
+                actionButtonText = "Go to Admin Login",
+                onAction = {
+                    authViewModel.resetState()
+                    navController.navigate("admin_login")
+                },
+                onDismiss = { authViewModel.resetState() }
+            )
+        } else if (errorMsg.startsWith("Email Not Verified:")) {
             AuthStatusDialog(
                 statusTitle = "EMAIL NOT VERIFIED",
                 statusMessage = "Please verify your email before logging in. We have sent a verification link to your email address.",
@@ -541,7 +581,7 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
                 
                 GlassLoginButton(
                     text = "Login",
-                    onClick = { authViewModel.login(email.trim(), password) },
+                    onClick = { authViewModel.loginPublic(email.trim(), password) },
                     isLoading = authState is AuthState.Loading,
                     showSuccess = showSuccess
                 )

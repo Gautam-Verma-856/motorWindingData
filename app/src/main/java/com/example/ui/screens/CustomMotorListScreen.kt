@@ -57,6 +57,12 @@ fun CustomMotorListScreen(
     val category = customCategories.find { it.id == categoryId } ?: CustomCategory(id = categoryId, name = "Custom Motor")
     val role = currentUser?.role ?: "public"
 
+    val isPublicActiveAndVerified = currentUser != null &&
+            currentUser.role.trim().equals("public", ignoreCase = true) &&
+            currentUser.emailVerified &&
+            currentUser.accountStatus.trim().equals("active", ignoreCase = true)
+    val canAddData = (role == "admin") || (isPublicActiveAndVerified && category.allowPublicSubmissions)
+
     var selectedCompany by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
     var motorToDelete by remember { mutableStateOf<String?>(null) }
@@ -178,6 +184,11 @@ fun CustomMotorListScreen(
                     }
                 },
                 actions = {
+                    if (canAddData) {
+                        IconButton(onClick = { navController.navigate("add_edit_custom_motor/${category.id}/new") }) {
+                            Icon(Icons.Default.Add, contentDescription = "Add Motor Data", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
                     IconButton(onClick = {
                         motorViewModel.loadData(isAdmin = (role == "admin"), userId = targetUserId)
                     }) {
@@ -193,6 +204,17 @@ fun CustomMotorListScreen(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
+        },
+        floatingActionButton = {
+            if (canAddData) {
+                ExtendedFloatingActionButton(
+                    onClick = { navController.navigate("add_edit_custom_motor/${category.id}/new") },
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Add Motor Data", fontWeight = FontWeight.Bold) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -288,6 +310,17 @@ fun CustomMotorListScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (canAddData) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { navController.navigate("add_edit_custom_motor/${category.id}/new") },
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Add Motor Data")
+                            }
+                        }
                     }
                 }
             } else {

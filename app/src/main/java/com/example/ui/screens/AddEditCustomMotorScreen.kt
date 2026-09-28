@@ -400,11 +400,16 @@ fun AddEditCustomMotorScreen(
                     }
 
                     val user = authViewModel.currentUser.value
-                    val isPublic = user?.role == "public"
+                    val isPublic = user?.role?.trim()?.equals("public", ignoreCase = true) == true
                     val actualId = if (id == "new") "" else id ?: ""
 
                     if (isPublic && actualId.isNotEmpty()) {
                         Toast.makeText(context, "Permission denied: Public users cannot edit motor data.", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+
+                    if (isPublic && (user?.emailVerified != true || user?.accountStatus?.trim()?.equals("active", ignoreCase = true) != true)) {
+                        Toast.makeText(context, "Only active, email-verified accounts can submit motor data.", Toast.LENGTH_LONG).show()
                         return@Button
                     }
 

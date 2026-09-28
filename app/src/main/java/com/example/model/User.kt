@@ -13,6 +13,14 @@ data class User(
     val adminSeen: Boolean = false,
     val seen: Boolean = false
 ) {
-    fun isUnseen(): Boolean = role.equals("public", ignoreCase = true) &&
-        accountStatus.equals("pending", ignoreCase = true) && !adminSeen && !seen
+    fun isUnseen(): Boolean = role.trim().equals("public", ignoreCase = true) &&
+        accountStatus.trim().equals("pending", ignoreCase = true) && !adminSeen && !seen
+
+    fun isAdmin(): Boolean = role.trim().equals("admin", ignoreCase = true)
+    fun isPublic(): Boolean = role.trim().equals("public", ignoreCase = true)
+    fun isActive(): Boolean = accountStatus.trim().equals("active", ignoreCase = true)
+    fun isPending(): Boolean = accountStatus.trim().equals("pending", ignoreCase = true)
+    fun isBlockedOrSuspended(): Boolean =
+        accountStatus.trim().equals("blocked", ignoreCase = true) ||
+        accountStatus.trim().equals("suspended", ignoreCase = true)
 }

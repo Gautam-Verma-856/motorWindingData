@@ -42,14 +42,16 @@ fun NavGraph() {
                 if (!isSessionChecking) {
                     val user = currentUser
                     if (user != null) {
-                        if (user.role.equals("admin", ignoreCase = true)) {
-                            motorViewModel.loadData(isAdmin = true)
-                            navController.navigate("admin_dashboard") {
+                        val role = user.role.trim().lowercase()
+                        val status = user.accountStatus.trim().lowercase()
+                        if (role == "admin" && status != "blocked" && status != "suspended") {
+                            motorViewModel.loadData(isAdmin = true, userId = user.id)
+                            navController.navigate("home") {
                                 popUpTo("splash") { inclusive = true }
                             }
-                        } else if (user.role.equals("public", ignoreCase = true) && user.accountStatus.equals("active", ignoreCase = true)) {
-                            motorViewModel.loadData(isAdmin = false)
-                            navController.navigate("user_dashboard") {
+                        } else if (role == "public" && user.emailVerified && status == "active") {
+                            motorViewModel.loadData(isAdmin = false, userId = user.id)
+                            navController.navigate("home") {
                                 popUpTo("splash") { inclusive = true }
                             }
                         } else {
@@ -221,6 +223,29 @@ fun NavGraph() {
                     motorViewModel = motorViewModel,
                     categoryId = categoryId,
                     id = id,
+                    authViewModel = authViewModel
+                )
+            }
+        }
+        composable(
+            "add_custom_motor/{categoryId}",
+            arguments = listOf(
+                navArgument("categoryId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
+                AddEditCustomMotorScreen(
+                    navController = navController,
+                    motorViewModel = motorViewModel,
+                    categoryId = categoryId,
+                    id = "new",
                     authViewModel = authViewModel
                 )
             }

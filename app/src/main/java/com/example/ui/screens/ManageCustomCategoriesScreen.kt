@@ -225,7 +225,8 @@ fun ManageCustomCategoriesScreen(
                         totalRecords = totalRecords,
                         pendingRecords = pendingRecords,
                         approvedRecords = approvedRecords,
-                        onOpen = { navController.navigate("custom_motor_list/${category.id}") },
+                        onAddData = { navController.navigate("add_edit_custom_motor/${category.id}/new") },
+                        onViewData = { navController.navigate("custom_motor_list/${category.id}") },
                         onEdit = {
                             categoryToEdit = category
                             showAddEditDialog = true
@@ -251,7 +252,8 @@ fun CustomCategoryAdminCard(
     totalRecords: Int,
     pendingRecords: Int,
     approvedRecords: Int,
-    onOpen: () -> Unit,
+    onAddData: () -> Unit,
+    onViewData: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleActive: (Boolean) -> Unit
@@ -362,7 +364,7 @@ fun CustomCategoryAdminCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // BOTTOM ACTIONS
+            // BOTTOM ACTIONS: Visible Switch, Add Data & View Data Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -376,20 +378,32 @@ fun CustomCategoryAdminCard(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        if (category.isActive) "Visible on Home" else "Hidden from Home",
+                        if (category.isActive) "Visible" else "Hidden",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                FilledTonalButton(
-                    onClick = onOpen,
-                    shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-                ) {
-                    Text("View Motors", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onAddData,
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Data", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    FilledTonalButton(
+                        onClick = onViewData,
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("View Data", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(Icons.AutoMirrored.Rounded.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
                 }
             }
         }

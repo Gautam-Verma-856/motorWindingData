@@ -92,6 +92,7 @@ fun HomeScreen(
     }
 
     val customCategories = motorViewModel?.customCategories?.collectAsState()?.value ?: emptyList()
+    val isAdmin = currentUser.role.trim().equals("admin", ignoreCase = true)
     var headerVisible by remember { mutableStateOf(false) }
     var cardsVisible by remember { mutableStateOf(false) }
     var loginVisible by remember { mutableStateOf(false) }
@@ -99,7 +100,7 @@ fun HomeScreen(
     val context = LocalContext.current
 
     LaunchedEffect(currentUser) {
-        motorViewModel?.loadData(isAdmin = currentUser.role == "admin", userId = currentUser.id)
+        motorViewModel?.loadData(isAdmin = isAdmin, userId = currentUser.id)
         headerVisible = true
         delay(100)
         cardsVisible = true
@@ -171,7 +172,7 @@ fun HomeScreen(
                                         )
                                     }
                                 }
-                                if (currentUser?.role == "admin") {
+                                if (isAdmin) {
                                     DropdownMenuItem(
                                         text = { Text("Manage Categories") },
                                         onClick = { menuExpanded = false; navController.navigate("manage_custom_categories") },
@@ -185,13 +186,13 @@ fun HomeScreen(
                                 )
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                                 DropdownMenuItem(
-                                    text = { Text("Dashboard") },
+                                    text = { Text(if (isAdmin) "Admin Dashboard" else "My Dashboard") },
                                     onClick = { 
                                         menuExpanded = false
-                                        if (currentUser.role == "admin") navController.navigate("admin_dashboard")
+                                        if (isAdmin) navController.navigate("admin_dashboard")
                                         else navController.navigate("user_dashboard") 
                                     },
-                                    leadingIcon = { Icon(Icons.Rounded.Dashboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
+                                    leadingIcon = { Icon(if (isAdmin) Icons.Rounded.AdminPanelSettings else Icons.Rounded.Dashboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
                                 )
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                                 Column(
@@ -307,7 +308,7 @@ fun HomeScreen(
 
                     FilledTonalButton(
                         onClick = {
-                            if (currentUser.role == "admin") navController.navigate("admin_dashboard")
+                            if (isAdmin) navController.navigate("admin_dashboard")
                             else navController.navigate("user_dashboard")
                         },
                         shape = RoundedCornerShape(50),
@@ -322,9 +323,9 @@ fun HomeScreen(
                             .widthIn(min = 200.dp),
                         elevation = ButtonDefaults.filledTonalButtonElevation(defaultElevation = 2.dp)
                     ) {
-                        Icon(Icons.Rounded.Dashboard, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(if (isAdmin) Icons.Rounded.AdminPanelSettings else Icons.Rounded.Dashboard, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Go to Dashboard", fontWeight = FontWeight.Bold)
+                        Text(if (isAdmin) "Go to Admin Dashboard" else "Go to Dashboard", fontWeight = FontWeight.Bold)
                     }
                 }
             }

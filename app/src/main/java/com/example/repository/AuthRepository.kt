@@ -12,82 +12,146 @@ class AuthRepository {
     private val db = FirebaseFirestore.getInstance()
     val currentUser get() = auth.currentUser
 
-    suspend fun login(email: String, password: String): Result<User> {
-        Log.d("AuthDebug", "Attempting login with email length: ${email.trim().length}, password length: ${password.length}")
+    suspend fun login(email: String, password: String, expectedRole: String? = null): Result<User> {
+        val trimmedEmail = email.trim()
+        Log.d("AuthDebug", "Attempting login with email: $trimmedEmail, expectedRole: $expectedRole")
         
         return try {
-            val res = auth.signInWithEmailAndPassword(email.trim(), password).await()
+            val res = auth.signInWithEmailAndPassword(trimmedEmail, password).await()
             val firebaseUser = res.user ?: throw Exception("User ID not found")
             val uid = firebaseUser.uid
             
             val userDoc = db.collection("users").document(uid).get().await()
-            if (userDoc.exists()) {
-                var user = userDoc.toObject(User::class.java)!!
+            if (!userDoc.exists()) {
+                auth.signOut()
+                return Result.failure(Exception("User profile not found"))
+            }
 
-                // Handle admin role and ensure active status in Firestore
-                if (user.role.equals("admin", ignoreCase = true)) {
-                    var needsUpdate = false
-                    val updates = mutableMapOf<String, Any>()
-                    if (!user.accountStatus.equals("active", ignoreCase = true)) {
-                        updates["accountStatus"] = "active"
-                        user = user.copy(accountStatus = "active")
-                        needsUpdate = true
-                    }
-                    if (user.id != uid) {
-                        updates["id"] = uid
-                        user = user.copy(id = uid)
-                        needsUpdate = true
-                    }
-                    if (user.role != "admin") {
-                        updates["role"] = "admin"
-                        user = user.copy(role = "admin")
-                        needsUpdate = true
-                    }
-                    if (needsUpdate) {
-                        try {
-                            Log.d("AuthRepository", "Updating admin profile document (uid=$uid): $updates")
-                            db.collection("users").document(uid).update(updates).await()
-                            Log.d("AuthRepository", "Admin profile document successfully updated in Firestore")
-                        } catch (e: Exception) {
-                            Log.e("AuthRepository", "Warning: Failed to update admin profile in Firestore (uid=$uid): ${e.message}")
-                        }
-                    }
-                    return Result.success(user)
+            var user = userDoc.toObject(User::class.java) ?: throw Exception("Unable to parse user profile")
+            val profileRole = (userDoc.getString("role") ?: user.role).trim().lowercase()
+            val profileStatus = (userDoc.getString("accountStatus") ?: user.accountStatus).trim().lowercase()
+            val targetRole = expectedRole?.trim()?.lowercase()
+
+            // 1. Expected Public Login flow
+            if (targetRole == "public") {
+                if (profileRole == "admin") {
+                    auth.signOut()
+                    return Result.failure(Exception("This is an admin account. Please use Admin Login."))
                 }
-
-                // Enforce email verification for Public users
-                if (user.role == "public") {
-                    if (!firebaseUser.isEmailVerified) {
-                        auth.signOut()
-                        return Result.failure(Exception("Email Not Verified: Please verify your email before logging in. Check your inbox for the verification link."))
-                    } else if (!user.emailVerified) {
-                        // Mark email as verified in Firestore
-                        try {
-                            db.collection("users").document(uid).update("emailVerified", true).await()
-                            user = user.copy(emailVerified = true)
-                        } catch (_: Exception) {}
-                    }
+                if (profileRole != "public") {
+                    auth.signOut()
+                    return Result.failure(Exception("Invalid account role."))
                 }
-
-                when (user.accountStatus.lowercase()) {
+                if (!firebaseUser.isEmailVerified) {
+                    auth.signOut()
+                    return Result.failure(Exception("Email Not Verified: Please verify your email before logging in. Check your inbox for the verification link."))
+                }
+                when (profileStatus) {
                     "pending" -> {
                         auth.signOut()
-                        Result.failure(Exception("Account Pending Approval: Your email is verified, but your account is waiting for Admin approval."))
+                        return Result.failure(Exception("Account Pending Approval: Your email is verified, but your account is waiting for Admin approval."))
                     }
                     "rejected" -> {
                         auth.signOut()
-                        Result.failure(Exception("Account Not Approved: Your account registration was not approved by Admin."))
+                        return Result.failure(Exception("Account Not Approved: Your account registration was not approved by Admin."))
                     }
                     "suspended", "blocked" -> {
                         auth.signOut()
-                        Result.failure(Exception("Account Suspended: Please contact the administrator."))
+                        return Result.failure(Exception("Account Suspended: Please contact the administrator."))
+                    }
+                    "active" -> {
+                        user = user.copy(id = uid, role = "public", accountStatus = "active")
+                        if (!user.emailVerified) {
+                            try {
+                                db.collection("users").document(uid).update("emailVerified", true).await()
+                                user = user.copy(emailVerified = true)
+                            } catch (_: Exception) {}
+                        }
+                        return Result.success(user)
                     }
                     else -> {
-                        Result.success(user)
+                        auth.signOut()
+                        return Result.failure(Exception("Account status not allowed: $profileStatus"))
+                    }
+                }
+            }
+
+            // 2. Expected Admin Login flow
+            if (targetRole == "admin") {
+                if (profileRole == "public") {
+                    auth.signOut()
+                    return Result.failure(Exception("This is a public account. Please use Public Login."))
+                }
+                if (profileRole != "admin") {
+                    auth.signOut()
+                    return Result.failure(Exception("Access Denied: Not an Admin"))
+                }
+                if (profileStatus == "suspended" || profileStatus == "blocked") {
+                    auth.signOut()
+                    return Result.failure(Exception("Account Suspended: Please contact the administrator."))
+                }
+
+                var needsUpdate = false
+                val updates = mutableMapOf<String, Any>()
+                if (!user.accountStatus.equals("active", ignoreCase = true)) {
+                    updates["accountStatus"] = "active"
+                    user = user.copy(accountStatus = "active")
+                    needsUpdate = true
+                }
+                if (user.id != uid) {
+                    updates["id"] = uid
+                    user = user.copy(id = uid)
+                    needsUpdate = true
+                }
+                if (user.role != "admin") {
+                    updates["role"] = "admin"
+                    user = user.copy(role = "admin")
+                    needsUpdate = true
+                }
+                if (needsUpdate) {
+                    try {
+                        db.collection("users").document(uid).update(updates).await()
+                    } catch (_: Exception) {}
+                }
+                return Result.success(user.copy(id = uid, role = "admin", accountStatus = "active"))
+            }
+
+            // 3. Generic login (fallback without expected role)
+            if (profileRole == "admin") {
+                if (profileStatus == "suspended" || profileStatus == "blocked") {
+                    auth.signOut()
+                    return Result.failure(Exception("Account Suspended: Please contact the administrator."))
+                }
+                return Result.success(user.copy(id = uid, role = "admin", accountStatus = "active"))
+            } else if (profileRole == "public") {
+                if (!firebaseUser.isEmailVerified) {
+                    auth.signOut()
+                    return Result.failure(Exception("Email Not Verified: Please verify your email before logging in. Check your inbox for the verification link."))
+                }
+                when (profileStatus) {
+                    "pending" -> {
+                        auth.signOut()
+                        return Result.failure(Exception("Account Pending Approval: Your email is verified, but your account is waiting for Admin approval."))
+                    }
+                    "rejected" -> {
+                        auth.signOut()
+                        return Result.failure(Exception("Account Not Approved: Your account registration was not approved by Admin."))
+                    }
+                    "suspended", "blocked" -> {
+                        auth.signOut()
+                        return Result.failure(Exception("Account Suspended: Please contact the administrator."))
+                    }
+                    "active" -> {
+                        return Result.success(user.copy(id = uid, role = "public", accountStatus = "active", emailVerified = true))
+                    }
+                    else -> {
+                        auth.signOut()
+                        return Result.failure(Exception("Account status not allowed: $profileStatus"))
                     }
                 }
             } else {
-                Result.failure(Exception("User profile not found"))
+                auth.signOut()
+                return Result.failure(Exception("Unknown user role."))
             }
         } catch (e: Exception) {
             val errorCode = if (e is FirebaseAuthException) e.errorCode else "UNKNOWN"
@@ -181,11 +245,27 @@ class AuthRepository {
     }
     
     suspend fun fetchCurrentUserProfile(): User? {
-        val uid = auth.currentUser?.uid ?: return null
+        val firebaseUser = auth.currentUser ?: return null
+        val uid = firebaseUser.uid
         return try {
             val doc = db.collection("users").document(uid).get().await()
-            var user = doc.toObject(User::class.java) ?: return null
-            if (user.role.equals("admin", ignoreCase = true)) {
+            if (!doc.exists()) {
+                auth.signOut()
+                return null
+            }
+            var user = doc.toObject(User::class.java) ?: run {
+                auth.signOut()
+                return null
+            }
+
+            val profileRole = (doc.getString("role") ?: user.role).trim().lowercase()
+            val profileStatus = (doc.getString("accountStatus") ?: user.accountStatus).trim().lowercase()
+
+            if (profileRole == "admin") {
+                if (profileStatus == "blocked" || profileStatus == "suspended") {
+                    auth.signOut()
+                    return null
+                }
                 var needsUpdate = false
                 val updates = mutableMapOf<String, Any>()
                 if (!user.accountStatus.equals("active", ignoreCase = true)) {
@@ -205,15 +285,21 @@ class AuthRepository {
                 }
                 if (needsUpdate) {
                     try {
-                        Log.d("AuthRepository", "fetchCurrentUserProfile: Updating admin profile (uid=$uid): $updates")
                         db.collection("users").document(uid).update(updates).await()
-                        Log.d("AuthRepository", "fetchCurrentUserProfile: Admin profile updated")
-                    } catch (e: Exception) {
-                        Log.e("AuthRepository", "fetchCurrentUserProfile: Failed to update admin profile (uid=$uid): ${e.message}")
-                    }
+                    } catch (_: Exception) {}
                 }
+                user.copy(id = uid, role = "admin", accountStatus = "active")
+            } else if (profileRole == "public") {
+                // Must be active and email verified
+                if (!firebaseUser.isEmailVerified || profileStatus != "active") {
+                    auth.signOut()
+                    return null
+                }
+                user.copy(id = uid, role = "public", accountStatus = "active", emailVerified = true)
+            } else {
+                auth.signOut()
+                null
             }
-            user
         } catch (e: Exception) {
             null
         }

@@ -79,19 +79,23 @@ class AuthViewModel : ViewModel() {
         }
     }
 
-    fun login(email: String, pass: String) {
+    fun login(email: String, pass: String, expectedRole: String? = null) {
         _authState.value = AuthState.Loading
         viewModelScope.launch {
-            val res = repo.login(email, pass)
+            val res = repo.login(email, pass, expectedRole)
             res.onSuccess {
                 _currentUser.value = it
                 _authState.value = AuthState.Success(it)
             }
             res.onFailure {
+                _currentUser.value = null
                 _authState.value = AuthState.Error(it.message ?: "Login failed")
             }
         }
     }
+
+    fun loginPublic(email: String, pass: String) = login(email, pass, "public")
+    fun loginAdmin(email: String, pass: String) = login(email, pass, "admin")
 
     fun formatIndianPhoneNumber(raw: String): String? {
         val trimmed = raw.trim().replace(" ", "").replace("-", "")
@@ -176,6 +180,7 @@ class AuthViewModel : ViewModel() {
         repo.logout()
         _currentUser.value = null
         _authState.value = AuthState.Idle
+        _usersList.value = emptyList()
         resetEmailVerificationState()
     }
     
