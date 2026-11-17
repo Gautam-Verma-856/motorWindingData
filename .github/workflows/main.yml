@@ -50,11 +50,18 @@ jobs:
 
       - name: Set Release Version
         run: |
-          CALC_VERSION_CODE=$(( ${{ github.run_number }} + 3 ))
+          MIN_VERSION_CODE=102
+          RAW_VERSION_CODE=$(( ${{ github.run_number }} + 101 ))
+          if [ "$RAW_VERSION_CODE" -lt "$MIN_VERSION_CODE" ]; then
+            CALC_VERSION_CODE=$MIN_VERSION_CODE
+          else
+            CALC_VERSION_CODE=$RAW_VERSION_CODE
+          fi
           CALC_VERSION_NAME="${CALC_VERSION_CODE}.0"
           echo "TAG_NAME=v${CALC_VERSION_NAME}" >> $GITHUB_ENV
           echo "VERSION_NAME=${CALC_VERSION_NAME}" >> $GITHUB_ENV
           echo "VERSION_CODE=${CALC_VERSION_CODE}" >> $GITHUB_ENV
+          echo "Calculated versionCode: ${CALC_VERSION_CODE}, versionName: ${CALC_VERSION_NAME}"
 
       - name: Build Debug APK
         run: chmod +x gradlew && ./gradlew assembleDebug
@@ -90,11 +97,16 @@ jobs:
             credential: cert(serviceAccount)
           });
           const db = getFirestore();
+          const latestVersionCode = parseInt(process.env.VERSION_CODE, 10);
+          const latestVersionName = process.env.VERSION_NAME;
+          if (!Number.isInteger(latestVersionCode) || latestVersionCode < 102) {
+            throw new Error('Invalid VERSION_CODE: ' + process.env.VERSION_CODE);
+          }
           const updateUrl = \`https://github.com/\${process.env.GITHUB_REPOSITORY}/releases/download/\${process.env.TAG_NAME}/app-debug.apk\`;
           db.doc('app_config/update').set({
-            latestVersionCode: parseInt(process.env.VERSION_CODE, 10),
-            latestVersionName: process.env.VERSION_NAME,
-            minimumSupportedVersionCode: parseInt(process.env.VERSION_CODE, 10),
+            latestVersionCode: latestVersionCode,
+            latestVersionName: latestVersionName,
+            minimumSupportedVersionCode: 102,
             forceUpdate: true,
             updateMessage: 'A new version of Motor Winding Data is available. Please update the app to continue.',
             updateUrl: updateUrl

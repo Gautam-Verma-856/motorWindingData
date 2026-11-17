@@ -1,7 +1,8 @@
 package com.example.utils
 
 import android.content.Context
-import android.net.Uri
+import android.content.Intent
+import android.os.Build
 import android.os.Environment
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +13,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import android.content.Intent
+import java.util.Locale
 
 sealed class DownloadState {
     object Idle : DownloadState()
@@ -24,28 +25,48 @@ sealed class DownloadState {
 
 class ApkDownloader(private val context: Context) {
 
+    fun canInstallPackages(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            context.packageManager.canRequestPackageInstalls()
+    }
+
     fun downloadApk(urlStr: String, fileName: String): Flow<DownloadState> = flow {
         emit(DownloadState.Downloading)
-        
+
+        var connection: HttpURLConnection? = null
         try {
-            val url = URL(urlStr)
-            var connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 15000
-            connection.readTimeout = 15000
-            connection.instanceFollowRedirects = true
+            var currentUrl = URL(urlStr)
+            connection = (currentUrl.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15000
+                readTimeout = 30000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "MotorWindingData-Android-Updater")
+            }
             connection.connect()
 
-            // Handle redirects manually if needed (GitHub releases redirect to AWS S3)
+            // Handle redirects manually across HTTP/HTTPS hosts (e.g., GitHub releases -> CDN)
             var redirectCount = 0
-            while ((connection.responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
-                   connection.responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
-                   connection.responseCode == HttpURLConnection.HTTP_SEE_OTHER) && redirectCount < 5) {
-                val newUrl = connection.getHeaderField("Location")
+            while (connection!!.responseCode in listOf(
+                    HttpURLConnection.HTTP_MOVED_TEMP,
+                    HttpURLConnection.HTTP_MOVED_PERM,
+                    HttpURLConnection.HTTP_SEE_OTHER,
+                    307,
+                    308
+                ) && redirectCount < 5
+            ) {
+                val newLocation = connection.getHeaderField("Location")
+                if (newLocation.isNullOrBlank()) break
+                val nextUrl = URL(currentUrl, newLocation)
                 connection.disconnect()
-                connection = URL(newUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
+                currentUrl = nextUrl
+                connection = (currentUrl.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "MotorWindingData-Android-Updater")
+                }
                 connection.connect()
                 redirectCount++
             }
@@ -55,51 +76,68 @@ class ApkDownloader(private val context: Context) {
                 return@flow
             }
 
-            val fileLength = connection.contentLength
-            val downloadDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            val outputFile = File(downloadDir, fileName)
+            val contentType = connection.contentType?.lowercase(Locale.US) ?: ""
+            if (contentType.contains("text/html")) {
+                emit(DownloadState.Error("Direct APK file was not returned. Please open the download link in your browser."))
+                return@flow
+            }
 
+            val fileLength = connection.contentLength
+            val downloadDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.cacheDir
+            if (!downloadDir.exists()) {
+                downloadDir.mkdirs()
+            }
+
+            val safeName = fileName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val outputFile = File(downloadDir, safeName)
             if (outputFile.exists()) {
                 outputFile.delete()
             }
 
-            val inputStream = connection.inputStream
-            val outputStream = FileOutputStream(outputFile)
-
             val data = ByteArray(8192)
-            var total: Long = 0
-            var count: Int
-            
+            var total = 0L
             var lastEmitTime = 0L
 
-            while (inputStream.read(data).also { count = it } != -1) {
-                total += count
-                outputStream.write(data, 0, count)
-                
-                val currentTime = System.currentTimeMillis()
-                if (fileLength > 0 && currentTime - lastEmitTime > 100) { // Emit at most every 100ms
-                    lastEmitTime = currentTime
-                    val progress = (total * 100 / fileLength).toInt()
-                    val downloadedMb = total.toFloat() / (1024 * 1024)
-                    val totalMb = fileLength.toFloat() / (1024 * 1024)
-                    emit(DownloadState.Progress(progress, downloadedMb, totalMb))
+            connection.inputStream.use { inputStream ->
+                FileOutputStream(outputFile).use { outputStream ->
+                    var count: Int
+                    while (inputStream.read(data).also { count = it } != -1) {
+                        total += count
+                        outputStream.write(data, 0, count)
+
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastEmitTime > 100) {
+                            lastEmitTime = currentTime
+                            val downloadedMb = total.toFloat() / (1024 * 1024)
+                            if (fileLength > 0) {
+                                val progress = ((total * 100) / fileLength).toInt().coerceIn(0, 100)
+                                val totalMb = fileLength.toFloat() / (1024 * 1024)
+                                emit(DownloadState.Progress(progress, downloadedMb, totalMb))
+                            } else {
+                                emit(DownloadState.Progress(-1, downloadedMb, 0f))
+                            }
+                        }
+                    }
+                    outputStream.flush()
                 }
             }
 
-            outputStream.flush()
-            outputStream.close()
-            inputStream.close()
-            connection.disconnect()
+            if (total <= 0L || !outputFile.exists()) {
+                emit(DownloadState.Error("Downloaded APK file is empty"))
+                return@flow
+            }
 
             emit(DownloadState.Success(outputFile))
         } catch (e: Exception) {
             e.printStackTrace()
             emit(DownloadState.Error(e.message ?: "Download failed"))
+        } finally {
+            connection?.disconnect()
         }
     }.flowOn(Dispatchers.IO)
 
-    fun installApk(file: File) {
-        try {
+    fun installApk(file: File): Boolean {
+        return try {
             val uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
@@ -110,8 +148,10 @@ class ApkDownloader(private val context: Context) {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
             }
             context.startActivity(intent)
+            true
         } catch (e: Exception) {
             e.printStackTrace()
+            false
         }
     }
 }

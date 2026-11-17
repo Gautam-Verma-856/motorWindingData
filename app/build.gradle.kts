@@ -55,8 +55,11 @@ android {
     applicationId = "com.aistudio.motorwinding.qrxpz"
     minSdk = 24
     targetSdk = 36
+    val minVersionCode = 102
+    val envVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
     val githubRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
-    val calcVersionCode = if (githubRunNumber != null) githubRunNumber + 3 else 3
+    val rawVersionCode = envVersionCode ?: if (githubRunNumber != null) githubRunNumber + 101 else minVersionCode
+    val calcVersionCode = maxOf(minVersionCode, rawVersionCode)
     val calcVersionName = "${calcVersionCode}.0"
 
     versionCode = calcVersionCode
