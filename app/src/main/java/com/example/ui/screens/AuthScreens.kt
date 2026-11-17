@@ -37,8 +37,10 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.viewmodel.AuthState
 import com.example.viewmodel.EmailVerificationStatus
+import com.example.viewmodel.PasswordResetState
 
 import com.example.ui.components.ErrorDialog
+import com.example.ui.components.LoadingDialog
 import com.example.ui.components.SuccessAnimationDialog
 import com.example.viewmodel.AuthViewModel
 
@@ -213,13 +215,16 @@ fun AdminLoginScreen(navController: NavController, authViewModel: AuthViewModel)
     var passwordVisible by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
+    var showForgotDialog by remember { mutableStateOf(false) }
     
     val authState by authViewModel.authState.collectAsState()
+    val passwordResetState by authViewModel.passwordResetState.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         visible = true
+        authViewModel.resetPasswordResetState()
         if (currentUser == null) {
             authViewModel.resetState()
         }
@@ -376,7 +381,12 @@ fun AdminLoginScreen(navController: NavController, authViewModel: AuthViewModel)
                     passwordVisible = passwordVisible,
                     onPasswordVisibilityChange = { passwordVisible = !passwordVisible }
                 )
-                Spacer(modifier = Modifier.height(32.dp))
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    TextButton(onClick = { showForgotDialog = true }) {
+                        Text("Forgot Password?", color = Color(0xFF06B6D4), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
                 
                 GlassLoginButton(
                     text = "Login",
@@ -385,6 +395,18 @@ fun AdminLoginScreen(navController: NavController, authViewModel: AuthViewModel)
                     showSuccess = showSuccess
                 )
             }
+        }
+
+        if (showForgotDialog) {
+            ForgotPasswordDialog(
+                initialEmail = email,
+                passwordResetState = passwordResetState,
+                onSendReset = { authViewModel.sendPasswordResetEmail(it) },
+                onDismiss = {
+                    showForgotDialog = false
+                    authViewModel.resetPasswordResetState()
+                }
+            )
         }
     }
 }
@@ -397,12 +419,15 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
     var passwordVisible by remember { mutableStateOf(false) }
     var showSuccess by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
+    var showForgotDialog by remember { mutableStateOf(false) }
     
     val authState by authViewModel.authState.collectAsState()
+    val passwordResetState by authViewModel.passwordResetState.collectAsState()
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         visible = true
+        authViewModel.resetPasswordResetState()
         if (authViewModel.currentUser.value == null) {
             authViewModel.resetState()
         }
@@ -577,7 +602,12 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
                     passwordVisible = passwordVisible,
                     onPasswordVisibilityChange = { passwordVisible = !passwordVisible }
                 )
-                Spacer(modifier = Modifier.height(32.dp))
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                    TextButton(onClick = { showForgotDialog = true }) {
+                        Text("Forgot Password?", color = Color(0xFF06B6D4), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
                 
                 GlassLoginButton(
                     text = "Login",
@@ -604,6 +634,92 @@ fun PublicLoginScreen(navController: NavController, authViewModel: AuthViewModel
                     }
                 }
             }
+        }
+
+        if (showForgotDialog) {
+            ForgotPasswordDialog(
+                initialEmail = email,
+                passwordResetState = passwordResetState,
+                onSendReset = { authViewModel.sendPasswordResetEmail(it) },
+                onDismiss = {
+                    showForgotDialog = false
+                    authViewModel.resetPasswordResetState()
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun ForgotPasswordDialog(
+    initialEmail: String,
+    passwordResetState: PasswordResetState,
+    onSendReset: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var resetEmail by remember(initialEmail) { mutableStateOf(initialEmail) }
+
+    when (passwordResetState) {
+        is PasswordResetState.Loading -> {
+            LoadingDialog(message = "Sending reset link...")
+        }
+        is PasswordResetState.Success -> {
+            SuccessAnimationDialog(
+                title = "Reset Link Sent!",
+                message = passwordResetState.message,
+                onDismiss = onDismiss
+            )
+        }
+        else -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Rounded.LockReset,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                title = {
+                    Text("Reset Password", fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Enter your registered email address and we will send a password reset link via Firebase.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedTextField(
+                            value = resetEmail,
+                            onValueChange = { resetEmail = it },
+                            label = { Text("Email Address") },
+                            leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (passwordResetState is PasswordResetState.Error) {
+                            Text(
+                                text = passwordResetState.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = { onSendReset(resetEmail) }) {
+                        Text("Send Link")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

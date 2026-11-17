@@ -339,6 +339,18 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     badgeCount = customCategories.size
                 ) { navController.navigate("manage_custom_categories") }
             }
+
+            AdminSectionTitle("Account Settings")
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                PremiumActionCard(
+                    title = "Change Password",
+                    subtitle = currentUser?.email?.takeIf { it.isNotBlank() }?.let { "Admin Security • $it" }
+                        ?: "Update your admin account password securely",
+                    icon = Icons.Rounded.LockReset,
+                    accentColor = Color(0xFF6366F1),
+                    modifier = Modifier.testTag("admin_change_password_card")
+                ) { navController.navigate("admin_change_password") }
+            }
             
             Spacer(modifier = Modifier.height(8.dp))
             
@@ -488,6 +500,18 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                 }
             }
             
+            AdminSectionTitle("Account Settings")
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                PremiumActionCard(
+                    title = "Change Password",
+                    subtitle = currentUser?.email?.takeIf { it.isNotBlank() }?.let { "Account Security • $it" }
+                        ?: "Update your account password securely",
+                    icon = Icons.Rounded.LockReset,
+                    accentColor = Color(0xFF06B6D4),
+                    modifier = Modifier.testTag("public_change_password_card")
+                ) { navController.navigate("public_change_password") }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(
                 onClick = {
@@ -590,6 +614,7 @@ fun PremiumActionCard(
     accentColor: Color = MaterialTheme.colorScheme.primary,
     badgeCount: Int = 0,
     hasUnreadDot: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -598,7 +623,7 @@ fun PremiumActionCard(
     
     ElevatedCard(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().scale(scale),
+        modifier = modifier.fillMaxWidth().scale(scale),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.model.CustomMotor
+import com.example.model.MotorConnectionOptions
 import com.example.model.SinglePhaseMotor
 import com.example.model.ThreePhaseMotor
 import com.example.ui.components.ConfirmationDialog
@@ -66,6 +67,7 @@ fun MotorListScreen(
     // Category selection for Single and 3 Phase
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var selectedCompany by remember { mutableStateOf("All") }
+    var selectedConnectionFilter by remember { mutableStateOf("All") }
     var searchQuery by remember { mutableStateOf("") }
 
     // Filter for generic "approved" / "pending" / "rejected" / "all" / "my_submissions" views
@@ -284,6 +286,7 @@ fun MotorListScreen(
                         onClick = {
                             selectedCategory = cat
                             selectedCompany = "All"
+                            selectedConnectionFilter = "All"
                         }
                     )
                 }
@@ -376,6 +379,7 @@ fun MotorListScreen(
                         if (selectedCategory != null) {
                             selectedCategory = null
                             selectedCompany = "All"
+                            selectedConnectionFilter = "All"
                             searchQuery = ""
                         } else {
                             navController.navigateUp()
@@ -408,8 +412,8 @@ fun MotorListScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search by company, HP...") },
+                    modifier = Modifier.fillMaxWidth().testTag("motor_search_input"),
+                    placeholder = { Text("Search by company, HP, RPM, coil size, connection...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
@@ -456,6 +460,35 @@ fun MotorListScreen(
                                 onClick = { selectedCompany = company },
                                 label = { Text("$company ($count)") },
                                 shape = RoundedCornerShape(14.dp)
+                            )
+                        }
+                    }
+                }
+
+                // CONNECTION FILTER CHIPS
+                if (type == "single" || type == "three" || selectedFilter != "Custom Categories") {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        "Filter by Connection:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val connectionFilterOptions = listOf("All") + MotorConnectionOptions.DROPDOWN_OPTIONS
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        connectionFilterOptions.forEach { connOption ->
+                            FilterChip(
+                                selected = selectedConnectionFilter == connOption,
+                                onClick = { selectedConnectionFilter = connOption },
+                                label = { Text(connOption) },
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.testTag("connection_filter_${connOption.lowercase().replace("-", "_")}")
                             )
                         }
                     }
@@ -530,13 +563,11 @@ fun MotorListScreen(
                     else -> true
                 }
                 val matchesCompany = selectedCompany == "All" || motor.companyName.equals(selectedCompany, ignoreCase = true)
-                val matchesSearch = searchQuery.isBlank() ||
-                        motor.companyName.contains(searchQuery, ignoreCase = true) ||
-                        motor.hp.contains(searchQuery, ignoreCase = true) ||
-                        motor.category.contains(searchQuery, ignoreCase = true)
+                val matchesConnection = MotorConnectionOptions.matchesConnectionFilter(motor.connection, selectedConnectionFilter)
+                val matchesSearch = motor.matchesSearch(searchQuery)
                 val matchesFilterChip = selectedFilter == "All" || selectedFilter == "Single Phase"
                 val publicBrowseAllowed = if (role != "admin" && type != "my_submissions") motor.isExplicitlyApproved() else true
-                matchesType && matchesStatus && matchesCompany && matchesSearch && matchesFilterChip && publicBrowseAllowed
+                matchesType && matchesStatus && matchesCompany && matchesConnection && matchesSearch && matchesFilterChip && publicBrowseAllowed
             }
 
             val filteredThree = threeInCategory.filter { motor ->
@@ -556,13 +587,11 @@ fun MotorListScreen(
                     else -> true
                 }
                 val matchesCompany = selectedCompany == "All" || motor.name.equals(selectedCompany, ignoreCase = true)
-                val matchesSearch = searchQuery.isBlank() ||
-                        motor.name.contains(searchQuery, ignoreCase = true) ||
-                        motor.hp.contains(searchQuery, ignoreCase = true) ||
-                        motor.category.contains(searchQuery, ignoreCase = true)
+                val matchesConnection = MotorConnectionOptions.matchesConnectionFilter(motor.connection, selectedConnectionFilter)
+                val matchesSearch = motor.matchesSearch(searchQuery)
                 val matchesFilterChip = selectedFilter == "All" || selectedFilter == "Three Phase"
                 val publicBrowseAllowed = if (role != "admin" && type != "my_submissions") motor.isExplicitlyApproved() else true
-                matchesType && matchesStatus && matchesCompany && matchesSearch && matchesFilterChip && publicBrowseAllowed
+                matchesType && matchesStatus && matchesCompany && matchesConnection && matchesSearch && matchesFilterChip && publicBrowseAllowed
             }
 
             val filteredCustom = customMotors.filter { motor ->
@@ -580,13 +609,15 @@ fun MotorListScreen(
                     "Rejected" -> motor.isRejected()
                     else -> true
                 }
+                val matchesConnection = selectedConnectionFilter == "All"
                 val matchesSearch = searchQuery.isBlank() ||
                         motor.companyName.contains(searchQuery, ignoreCase = true) ||
                         motor.motorName.contains(searchQuery, ignoreCase = true) ||
-                        motor.hp.contains(searchQuery, ignoreCase = true)
+                        motor.hp.contains(searchQuery, ignoreCase = true) ||
+                        motor.customFields.values.any { it.contains(searchQuery, ignoreCase = true) }
                 val matchesFilterChip = selectedFilter == "All" || selectedFilter == "Custom Categories"
                 val publicBrowseAllowed = if (role != "admin" && type != "my_submissions") motor.isExplicitlyApproved() else true
-                matchesType && matchesStatus && matchesSearch && matchesFilterChip && publicBrowseAllowed
+                matchesType && matchesStatus && matchesConnection && matchesSearch && matchesFilterChip && publicBrowseAllowed
             }
 
             if (isLoadingData) {
@@ -889,6 +920,17 @@ fun PremiumSinglePhaseMotorCard(
                         InfoChip("Run SWG", motor.runningSwg.ifEmpty { "-" })
                         InfoChip("Start SWG", motor.startingSwg.ifEmpty { "-" })
                     }
+                    if (motor.rpm.isNotBlank() || motor.amps.isNotBlank() || motor.coilSize.isNotBlank() || motor.connection.isNotBlank()) {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (motor.rpm.isNotBlank()) InfoChip("RPM", motor.rpm)
+                            if (motor.amps.isNotBlank()) InfoChip("Amps", motor.amps)
+                            if (motor.coilSize.isNotBlank()) InfoChip("Coil", motor.coilSize)
+                            if (motor.connection.isNotBlank()) InfoChip("Conn", motor.connection)
+                        }
+                    }
                 }
             }
 
@@ -1098,6 +1140,17 @@ fun PremiumThreePhaseMotorCard(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         InfoChip("SWG", motor.swg.ifEmpty { "-" })
                         InfoChip("Turns", motor.turn.ifEmpty { "-" })
+                    }
+                    if (motor.rpm.isNotBlank() || motor.amps.isNotBlank() || motor.coilSize.isNotBlank() || motor.connection.isNotBlank()) {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (motor.rpm.isNotBlank()) InfoChip("RPM", motor.rpm)
+                            if (motor.amps.isNotBlank()) InfoChip("Amps", motor.amps)
+                            if (motor.coilSize.isNotBlank()) InfoChip("Coil", motor.coilSize)
+                            if (motor.connection.isNotBlank()) InfoChip("Conn", motor.connection)
+                        }
                     }
                 }
             }

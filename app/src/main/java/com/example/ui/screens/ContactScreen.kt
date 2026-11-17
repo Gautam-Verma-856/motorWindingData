@@ -5,8 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,101 +24,34 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Verified
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.path
 import androidx.navigation.NavController
 import kotlinx.coroutines.delay
-import com.example.BuildConfig
 
 object ContactConfig {
     const val ADMIN_NAME = "Gautam Verma"
-    const val ADMIN_PHONE = "9098708284"
+    const val INSTAGRAM_HANDLE = "@gautam_verma_856"
     const val INSTAGRAM_URL = "https://www.instagram.com/gautam_verma_856?stkn=MTIzdncyMXUybmM5Zw=="
 }
-
-val WhatsAppIcon: ImageVector
-    get() = ImageVector.Builder(
-        name = "WhatsApp", defaultWidth = 24.dp, defaultHeight = 24.dp,
-        viewportWidth = 24f, viewportHeight = 24f
-    ).apply {
-        path(fill = SolidColor(Color.White)) {
-            moveTo(17.472f, 14.382f)
-            curveTo(17.175f, 14.233f, 15.714f, 13.515f, 15.442f, 13.415f)
-            curveTo(15.169f, 13.316f, 14.971f, 13.267f, 14.772f, 13.565f)
-            curveTo(14.575f, 13.862f, 14.005f, 14.531f, 13.832f, 14.729f)
-            curveTo(13.659f, 14.928f, 13.485f, 14.952f, 13.188f, 14.804f)
-            curveTo(12.891f, 14.654f, 11.933f, 14.341f, 10.798f, 13.329f)
-            curveTo(9.915f, 12.541f, 9.32f, 11.568f, 9.147f, 11.27f)
-            curveTo(8.974f, 10.973f, 9.129f, 10.812f, 9.277f, 10.664f)
-            curveTo(9.411f, 10.531f, 9.575f, 10.317f, 9.723f, 10.144f)
-            curveTo(9.872f, 9.97f, 9.921f, 9.846f, 10.021f, 9.647f)
-            curveTo(10.12f, 9.449f, 10.22f, 9.301f, 10.418f, 9.102f)
-            curveTo(10.616f, 8.904f, 10.814f, 8.904f, 10.914f, 8.904f)
-            curveTo(11.013f, 8.904f, 11.112f, 8.904f, 11.162f, 8.929f)
-            curveTo(11.285f, 8.954f, 11.459f, 9.351f, 11.483f, 9.401f)
-            curveTo(11.533f, 9.5f, 11.632f, 9.723f, 11.756f, 10.021f)
-            curveTo(11.855f, 10.269f, 11.979f, 10.517f, 12.004f, 10.591f)
-            curveTo(12.053f, 10.74f, 12.029f, 10.888f, 11.954f, 11.012f)
-            curveTo(11.88f, 11.136f, 11.806f, 11.211f, 11.706f, 11.335f)
-            curveTo(11.607f, 11.459f, 11.483f, 11.607f, 11.409f, 11.682f)
-            curveTo(11.285f, 11.83f, 11.161f, 11.979f, 11.31f, 12.252f)
-            curveTo(11.458f, 12.525f, 11.979f, 13.368f, 12.748f, 14.038f)
-            curveTo(13.739f, 14.906f, 14.507f, 15.178f, 14.78f, 15.277f)
-            curveTo(15.028f, 15.376f, 15.201f, 15.352f, 15.375f, 15.178f)
-            curveTo(15.548f, 15.005f, 16.094f, 14.36f, 16.292f, 14.062f)
-            curveTo(16.49f, 13.765f, 16.689f, 13.814f, 16.961f, 13.914f)
-            curveTo(17.234f, 14.013f, 18.919f, 14.831f, 19.266f, 15.005f)
-            curveTo(19.613f, 15.178f, 19.836f, 15.277f, 19.935f, 15.426f)
-            curveTo(20.034f, 15.575f, 20.034f, 16.22f, 19.737f, 16.964f)
-            curveTo(19.439f, 17.707f, 17.977f, 18.352f, 17.283f, 18.427f)
-            curveTo(16.738f, 18.476f, 15.895f, 18.476f, 14.507f, 18.005f)
-            curveTo(12.748f, 17.41f, 10.418f, 15.823f, 8.683f, 13.592f)
-            curveTo(8.583f, 13.443f, 6.774f, 11.063f, 6.774f, 8.584f)
-            curveTo(6.774f, 6.105f, 8.038f, 4.915f, 8.459f, 4.469f)
-            curveTo(8.831f, 4.072f, 9.401f, 3.849f, 9.946f, 3.849f)
-            curveTo(10.12f, 3.849f, 10.268f, 3.874f, 10.392f, 3.874f)
-            curveTo(10.665f, 3.899f, 10.789f, 3.899f, 10.962f, 4.345f)
-            curveTo(11.16f, 4.841f, 11.656f, 6.055f, 11.706f, 6.179f)
-            curveTo(11.78f, 6.303f, 11.83f, 6.477f, 11.731f, 6.65f)
-            curveTo(11.632f, 6.824f, 11.557f, 6.873f, 11.409f, 7.047f)
-            curveTo(11.26f, 7.22f, 11.112f, 7.419f, 10.988f, 7.543f)
-            curveTo(10.839f, 7.691f, 10.69f, 7.865f, 10.888f, 8.212f)
-            curveTo(11.087f, 8.559f, 11.656f, 9.476f, 12.524f, 10.244f)
-            curveTo(13.639f, 11.235f, 14.507f, 11.533f, 14.829f, 11.682f)
-            curveTo(15.151f, 11.83f, 15.35f, 11.806f, 15.523f, 11.632f)
-            curveTo(15.697f, 11.459f, 16.341f, 10.665f, 16.589f, 10.269f)
-            curveTo(16.837f, 9.872f, 17.085f, 9.946f, 17.407f, 10.07f)
-            curveTo(17.729f, 10.194f, 19.414f, 11.012f, 19.563f, 11.086f)
-            curveTo(19.712f, 11.161f, 19.811f, 11.185f, 19.836f, 11.334f)
-            curveTo(19.885f, 11.483f, 19.885f, 12.152f, 19.588f, 13.045f)
-            close()
-            moveTo(12.004f, 2.0f)
-            curveTo(6.48f, 2.0f, 2.0f, 6.48f, 2.0f, 12.004f)
-            curveTo(2.0f, 13.764f, 2.458f, 15.425f, 3.264f, 16.862f)
-            lineTo(2.0f, 21.464f)
-            lineTo(6.711f, 20.225f)
-            curveTo(8.074f, 21.192f, 9.771f, 21.761f, 11.583f, 21.761f)
-            curveTo(17.107f, 21.761f, 21.587f, 17.281f, 21.587f, 11.757f)
-            curveTo(21.587f, 6.233f, 17.107f, 1.753f, 11.583f, 1.753f)
-            close()
-        }
-    }.build()
 
 val InstagramIcon: ImageVector
     get() = ImageVector.Builder(
@@ -210,7 +149,7 @@ fun ContactScreen(navController: NavController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Contact Info", fontWeight = FontWeight.SemiBold) },
+                title = { Text("Contact", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
@@ -249,8 +188,6 @@ fun ContactScreen(navController: NavController) {
                         .padding(horizontal = 24.dp, vertical = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    
-                    // TOP AREA: Circular profile
                     Box(
                         modifier = Modifier
                             .size(110.dp)
@@ -274,7 +211,6 @@ fun ContactScreen(navController: NavController) {
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Title & Name
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = ContactConfig.ADMIN_NAME,
@@ -290,9 +226,9 @@ fun ContactScreen(navController: NavController) {
                             modifier = Modifier.size(24.dp)
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(4.dp))
-                    
+
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
@@ -308,62 +244,37 @@ fun ContactScreen(navController: NavController) {
 
                     Spacer(modifier = Modifier.height(40.dp))
 
-                    // CONTACT OPTIONS (WhatsApp, Instagram, Phone)
-                    
-                    ModernActionCard(
-                        title = "WhatsApp",
-                        subtitle = ContactConfig.ADMIN_PHONE,
-                        icon = WhatsAppIcon,
-                        iconBgColor = Color(0xFF25D366),
-                        delayIndex = 0,
-                        isVisible = isVisible,
-                        onClick = { openWhatsApp(context, ContactConfig.ADMIN_PHONE) }
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
+                    // Instagram-only contact card using existing configured Instagram ID
                     ModernActionCard(
                         title = "Instagram",
-                        subtitle = "@gautam_verma_856",
+                        subtitle = ContactConfig.INSTAGRAM_HANDLE,
                         icon = InstagramIcon,
                         iconBgColor = Color(0xFFE1306C),
-                        delayIndex = 1,
+                        delayIndex = 0,
                         isVisible = isVisible,
-                        onClick = { openUrl(context, ContactConfig.INSTAGRAM_URL) }
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    ModernActionCard(
-                        title = "Contact",
-                        subtitle = ContactConfig.ADMIN_PHONE,
-                        icon = Icons.Rounded.Phone,
-                        iconBgColor = MaterialTheme.colorScheme.primary,
-                        delayIndex = 2,
-                        isVisible = isVisible,
-                        onClick = { openDialer(context, ContactConfig.ADMIN_PHONE) }
+                        modifier = Modifier.testTag("contact_instagram_card"),
+                        onClick = { openInstagramProfile(context, ContactConfig.INSTAGRAM_URL) }
                     )
 
                     Spacer(modifier = Modifier.height(48.dp))
 
-                    // BOTTOM AREA: Connect with us
                     Text(
-                        text = "Connect with us",
+                        text = "Connect on Instagram",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
-                    
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    
+
                     Text(
-                        text = "For inquiries, support or feedback.",
+                        text = "Tap the Instagram card above to visit our profile.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                         textAlign = TextAlign.Center
                     )
-                    
+
                     Spacer(modifier = Modifier.height(32.dp))
                 }
             }
@@ -379,11 +290,12 @@ fun ModernActionCard(
     iconBgColor: Color,
     delayIndex: Int,
     isVisible: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
-    
+
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.96f else 1f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
@@ -391,7 +303,7 @@ fun ModernActionCard(
     )
 
     var cardVisible by remember { mutableStateOf(false) }
-    
+
     LaunchedEffect(isVisible) {
         if (isVisible) {
             delay(100L + (delayIndex * 100L))
@@ -404,8 +316,9 @@ fun ModernActionCard(
         enter = fadeIn(animationSpec = tween(400)) + slideInHorizontally(initialOffsetX = { 50 }, animationSpec = tween(400))
     ) {
         Surface(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
+                .defaultMinSize(minHeight = 48.dp)
                 .scale(scale)
                 .graphicsLayer {
                     shadowElevation = if (isPressed) 2.dp.toPx() else 10.dp.toPx()
@@ -426,7 +339,7 @@ fun ModernActionCard(
                     .background(
                         Brush.horizontalGradient(
                             listOf(
-                                iconBgColor.copy(alpha = 0.05f),
+                                iconBgColor.copy(alpha = 0.06f),
                                 MaterialTheme.colorScheme.surface
                             )
                         )
@@ -434,11 +347,19 @@ fun ModernActionCard(
                     .padding(20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Icon Box
                 Box(
                     modifier = Modifier
                         .size(52.dp)
-                        .background(iconBgColor, CircleShape)
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    Color(0xFFF58529),
+                                    Color(0xFFDD2A7B),
+                                    Color(0xFF8134AF)
+                                )
+                            ),
+                            CircleShape
+                        )
                         .graphicsLayer {
                             shadowElevation = 6.dp.toPx()
                             shape = CircleShape
@@ -455,7 +376,6 @@ fun ModernActionCard(
 
                 Spacer(modifier = Modifier.width(20.dp))
 
-                // Text Column
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
@@ -471,7 +391,6 @@ fun ModernActionCard(
                     )
                 }
 
-                // Action arrow
                 Box(
                     modifier = Modifier
                         .size(36.dp)
@@ -480,7 +399,7 @@ fun ModernActionCard(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.ChevronRight,
-                        contentDescription = "Go",
+                        contentDescription = "Open Instagram",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
@@ -490,47 +409,23 @@ fun ModernActionCard(
     }
 }
 
-private fun openWhatsApp(context: Context, phone: String) {
-    try {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            data = Uri.parse("https://wa.me/91$phone")
-            setPackage("com.whatsapp")
-        }
-        context.startActivity(intent)
-    } catch (e: ActivityNotFoundException) {
-        try {
-            val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("https://wa.me/91$phone")
-            }
-            context.startActivity(fallbackIntent)
-        } catch (e2: Exception) {
-            openDialer(context, phone)
-        }
-    } catch (e: Exception) {
-        Toast.makeText(context, "Could not open WhatsApp", Toast.LENGTH_SHORT).show()
-    }
-}
-
-private fun openUrl(context: Context, url: String) {
+private fun openInstagramProfile(context: Context, url: String) {
     if (url.isBlank()) {
-        Toast.makeText(context, "Link not available", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Instagram link not available", Toast.LENGTH_SHORT).show()
         return
     }
     try {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
-    }
-}
-
-private fun openDialer(context: Context, phone: String) {
-    try {
-        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-            data = Uri.parse("tel:$phone")
+        val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            setPackage("com.instagram.android")
         }
-        context.startActivity(dialIntent)
-    } catch (e: Exception) {
-        Toast.makeText(context, "Could not open dialer", Toast.LENGTH_SHORT).show()
+        context.startActivity(appIntent)
+    } catch (_: ActivityNotFoundException) {
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (_: Exception) {
+            Toast.makeText(context, "Could not open Instagram profile", Toast.LENGTH_SHORT).show()
+        }
+    } catch (_: Exception) {
+        Toast.makeText(context, "Could not open Instagram profile", Toast.LENGTH_SHORT).show()
     }
 }

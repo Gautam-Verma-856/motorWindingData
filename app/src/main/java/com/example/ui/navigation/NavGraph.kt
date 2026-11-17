@@ -151,6 +151,28 @@ fun NavGraph() {
                 UserDashboardScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel)
             }
         }
+        composable("admin_change_password") {
+            if (currentUser == null || !currentUser!!.isAdmin()) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                AdminChangePasswordScreen(navController = navController, authViewModel = authViewModel)
+            }
+        }
+        composable("public_change_password") {
+            if (currentUser == null || !currentUser!!.isPublic()) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                PublicChangePasswordScreen(navController = navController, authViewModel = authViewModel)
+            }
+        }
         composable("manage_custom_categories") {
             if (currentUser == null || !currentUser!!.role.equals("admin", ignoreCase = true)) {
                 LaunchedEffect(Unit) {

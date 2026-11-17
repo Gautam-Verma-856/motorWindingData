@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.*
@@ -24,10 +25,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.model.MotorConnectionOptions
 import com.example.model.SinglePhaseMotor
 import com.example.model.ThreePhaseMotor
 import com.example.viewmodel.MotorViewModel
@@ -68,6 +72,11 @@ fun AddEditMotorScreen(
     var companyName by remember { mutableStateOf("") }
     var hp by remember { mutableStateOf("") }
     var capacitor by remember { mutableStateOf("") }
+    var rpm by remember { mutableStateOf("") }
+    var amps by remember { mutableStateOf("") }
+    var coilSize by remember { mutableStateOf("") }
+    var selectedConnectionOption by remember { mutableStateOf("") }
+    var customConnection by remember { mutableStateOf("") }
     var runningPitch by remember { mutableStateOf("") }
     var runningTurn by remember { mutableStateOf("") }
     var runningSwg by remember { mutableStateOf("") }
@@ -91,6 +100,7 @@ fun AddEditMotorScreen(
     var isUploading by remember { mutableStateOf(false) }
     var uploadProgress by remember { mutableStateOf(0) }
     var totalUploads by remember { mutableStateOf(0) }
+    var isLoadedForId by remember(id) { mutableStateOf(false) }
 
     val totalPhotos = existingPhotoUrls.size + selectedImageUris.size
 
@@ -107,8 +117,8 @@ fun AddEditMotorScreen(
         }
     }
 
-    LaunchedEffect(id) {
-        if (id != null && id != "new") {
+    LaunchedEffect(id, singlePhaseMotors, threePhaseMotors) {
+        if (id != null && id != "new" && !isLoadedForId) {
             if (type == "single") {
                 val motor = singlePhaseMotors.find { it.id == id }
                 if (motor != null) {
@@ -123,6 +133,12 @@ fun AddEditMotorScreen(
                     companyName = motor.companyName
                     hp = motor.hp
                     capacitor = motor.capacitor
+                    rpm = motor.rpm
+                    amps = motor.amps
+                    coilSize = motor.coilSize
+                    val (connOption, customConn) = MotorConnectionOptions.resolveSavedSelection(motor.connection)
+                    selectedConnectionOption = connOption
+                    customConnection = customConn
                     runningPitch = motor.runningPitch
                     runningTurn = motor.runningTurn
                     runningSwg = motor.runningSwg
@@ -131,6 +147,7 @@ fun AddEditMotorScreen(
                     startingTurn = motor.startingTurn
                     startingSwg = motor.startingSwg
                     startingWeight = motor.startingWeight
+                    isLoadedForId = true
                 }
             } else {
                 val motor = threePhaseMotors.find { it.id == id }
@@ -146,10 +163,17 @@ fun AddEditMotorScreen(
                     companyName = motor.name
                     slot = motor.slot
                     hp = motor.hp
+                    rpm = motor.rpm
+                    amps = motor.amps
+                    coilSize = motor.coilSize
+                    val (connOption, customConn) = MotorConnectionOptions.resolveSavedSelection(motor.connection)
+                    selectedConnectionOption = connOption
+                    customConnection = customConn
                     pitch = motor.pitch
                     turn = motor.turn
                     swg = motor.swg
                     weight = motor.weight
+                    isLoadedForId = true
                 }
             }
         }
@@ -334,9 +358,58 @@ fun AddEditMotorScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-                    PremiumTextField(value = companyName, onValueChange = { companyName = it }, label = "Company Name")
-                    PremiumTextField(value = hp, onValueChange = { hp = it }, label = "HP")
-                    PremiumTextField(value = capacitor, onValueChange = { capacitor = it }, label = "Capacitor")
+                    PremiumTextField(
+                        value = companyName,
+                        onValueChange = { companyName = it },
+                        label = "Company Name",
+                        modifier = Modifier.testTag("single_company_name_input")
+                    )
+                    PremiumTextField(
+                        value = hp,
+                        onValueChange = { hp = it },
+                        label = "HP",
+                        modifier = Modifier.testTag("single_hp_input")
+                    )
+                    PremiumTextField(
+                        value = capacitor,
+                        onValueChange = { capacitor = it },
+                        label = "Capacitor",
+                        modifier = Modifier.testTag("single_capacitor_input")
+                    )
+                    PremiumTextField(
+                        value = rpm,
+                        onValueChange = { rpm = it },
+                        label = "RPM",
+                        placeholder = "e.g. 1440, 2800",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.testTag("single_rpm_input")
+                    )
+                    PremiumTextField(
+                        value = amps,
+                        onValueChange = { amps = it },
+                        label = "Amps",
+                        placeholder = "e.g. 4.5",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.testTag("single_amps_input")
+                    )
+                    PremiumTextField(
+                        value = coilSize,
+                        onValueChange = { coilSize = it },
+                        label = "Coil Size",
+                        placeholder = "e.g. 22 SWG / custom size",
+                        modifier = Modifier.testTag("single_coil_size_input")
+                    )
+                    ConnectionDropdownField(
+                        selectedOption = selectedConnectionOption,
+                        customConnection = customConnection,
+                        onOptionSelected = { option ->
+                            selectedConnectionOption = option
+                            if (option != MotorConnectionOptions.OPTION_OTHER) {
+                                customConnection = ""
+                            }
+                        },
+                        onCustomConnectionChange = { customConnection = it }
+                    )
                 }
                 
                 FormSection("Running Winding", Icons.Rounded.Speed) {
@@ -370,9 +443,58 @@ fun AddEditMotorScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
-                    PremiumTextField(value = companyName, onValueChange = { companyName = it }, label = "Motor/Company Name")
-                    PremiumTextField(value = slot, onValueChange = { slot = it }, label = "Slot")
-                    PremiumTextField(value = hp, onValueChange = { hp = it }, label = "HP")
+                    PremiumTextField(
+                        value = companyName,
+                        onValueChange = { companyName = it },
+                        label = "Motor/Company Name",
+                        modifier = Modifier.testTag("three_company_name_input")
+                    )
+                    PremiumTextField(
+                        value = slot,
+                        onValueChange = { slot = it },
+                        label = "Slot",
+                        modifier = Modifier.testTag("three_slot_input")
+                    )
+                    PremiumTextField(
+                        value = hp,
+                        onValueChange = { hp = it },
+                        label = "HP",
+                        modifier = Modifier.testTag("three_hp_input")
+                    )
+                    PremiumTextField(
+                        value = rpm,
+                        onValueChange = { rpm = it },
+                        label = "RPM",
+                        placeholder = "e.g. 1440, 2800",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.testTag("three_rpm_input")
+                    )
+                    PremiumTextField(
+                        value = amps,
+                        onValueChange = { amps = it },
+                        label = "Amps",
+                        placeholder = "e.g. 7.5",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.testTag("three_amps_input")
+                    )
+                    PremiumTextField(
+                        value = coilSize,
+                        onValueChange = { coilSize = it },
+                        label = "Coil Size",
+                        placeholder = "e.g. 20 SWG / custom size",
+                        modifier = Modifier.testTag("three_coil_size_input")
+                    )
+                    ConnectionDropdownField(
+                        selectedOption = selectedConnectionOption,
+                        customConnection = customConnection,
+                        onOptionSelected = { option ->
+                            selectedConnectionOption = option
+                            if (option != MotorConnectionOptions.OPTION_OTHER) {
+                                customConnection = ""
+                            }
+                        },
+                        onCustomConnectionChange = { customConnection = it }
+                    )
                 }
                 
                 FormSection("Winding Data", Icons.Rounded.Label) {
@@ -389,6 +511,10 @@ fun AddEditMotorScreen(
                 onClick = {
                     if (companyName.isBlank()) {
                         Toast.makeText(context, if (type == "single") "Please enter Company Name" else "Please enter Motor/Company Name", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    if (selectedConnectionOption == MotorConnectionOptions.OPTION_OTHER && customConnection.isBlank()) {
+                        Toast.makeText(context, "Please enter custom connection", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
 
@@ -417,6 +543,7 @@ fun AddEditMotorScreen(
                     } else {
                         if (actualId.isNotEmpty()) existingCreatedByName else currentUserName
                     }
+                    val finalConnection = MotorConnectionOptions.resolveForSave(selectedConnectionOption, customConnection)
 
                     coroutineScope.launch {
                         var finalPhotoUrls = existingPhotoUrls
@@ -446,17 +573,21 @@ fun AddEditMotorScreen(
                                 category = category,
                                 photoUrl = finalPhotoUrls.firstOrNull() ?: photoUrl,
                                 photoUrls = finalPhotoUrls,
-                                companyName = companyName,
-                                hp = hp,
-                                capacitor = capacitor,
-                                runningPitch = runningPitch,
-                                runningTurn = runningTurn,
-                                runningSwg = runningSwg,
-                                runningWeight = runningWeight,
-                                startingPitch = startingPitch,
-                                startingTurn = startingTurn,
-                                startingSwg = startingSwg,
-                                startingWeight = startingWeight,
+                                companyName = companyName.trim(),
+                                hp = hp.trim(),
+                                capacitor = capacitor.trim(),
+                                rpm = rpm.trim(),
+                                amps = amps.trim(),
+                                coilSize = coilSize.trim(),
+                                connection = finalConnection,
+                                runningPitch = runningPitch.trim(),
+                                runningTurn = runningTurn.trim(),
+                                runningSwg = runningSwg.trim(),
+                                runningWeight = runningWeight.trim(),
+                                startingPitch = startingPitch.trim(),
+                                startingTurn = startingTurn.trim(),
+                                startingSwg = startingSwg.trim(),
+                                startingWeight = startingWeight.trim(),
                                 status = finalStatus,
                                 createdBy = finalCreatedBy,
                                 createdByName = finalCreatedByName
@@ -468,13 +599,17 @@ fun AddEditMotorScreen(
                                 category = category,
                                 photoUrl = finalPhotoUrls.firstOrNull() ?: photoUrl,
                                 photoUrls = finalPhotoUrls,
-                                name = companyName,
-                                slot = slot,
-                                hp = hp,
-                                pitch = pitch,
-                                turn = turn,
-                                swg = swg,
-                                weight = weight,
+                                name = companyName.trim(),
+                                slot = slot.trim(),
+                                hp = hp.trim(),
+                                rpm = rpm.trim(),
+                                amps = amps.trim(),
+                                coilSize = coilSize.trim(),
+                                connection = finalConnection,
+                                pitch = pitch.trim(),
+                                turn = turn.trim(),
+                                swg = swg.trim(),
+                                weight = weight.trim(),
                                 status = finalStatus,
                                 createdBy = finalCreatedBy,
                                 createdByName = finalCreatedByName
@@ -483,7 +618,10 @@ fun AddEditMotorScreen(
                         }
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .testTag("submit_motor_data_button"),
                 shape = RoundedCornerShape(16.dp),
                 enabled = !isUploading && uiState !is UiState.Loading
             ) {
@@ -524,12 +662,86 @@ fun FormSection(title: String, icon: ImageVector, content: @Composable ColumnSco
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PremiumTextField(value: String, onValueChange: (String) -> Unit, label: String) {
+fun ConnectionDropdownField(
+    selectedOption: String,
+    customConnection: String,
+    onOptionSelected: (String) -> Unit,
+    onCustomConnectionChange: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded }
+        ) {
+            OutlinedTextField(
+                value = selectedOption,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Connection") },
+                placeholder = { Text("Select connection type") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    .testTag("connection_dropdown"),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant,
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                ),
+                singleLine = true
+            )
+
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                MotorConnectionOptions.DROPDOWN_OPTIONS.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            onOptionSelected(option)
+                            expanded = false
+                        },
+                        modifier = Modifier.testTag("connection_option_${option.lowercase().replace("-", "_")}")
+                    )
+                }
+            }
+        }
+
+        if (selectedOption == MotorConnectionOptions.OPTION_OTHER) {
+            PremiumTextField(
+                value = customConnection,
+                onValueChange = onCustomConnectionChange,
+                label = "Custom Connection",
+                placeholder = "Enter custom connection type",
+                modifier = Modifier.testTag("custom_connection_input")
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PremiumTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
         label = { Text(label) },
-        modifier = Modifier.fillMaxWidth(),
+        placeholder = placeholder?.let { { Text(it) } },
+        keyboardOptions = keyboardOptions,
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = MaterialTheme.colorScheme.primary,

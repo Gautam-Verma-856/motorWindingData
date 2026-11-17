@@ -2,6 +2,7 @@ package com.example.repository
 
 import android.util.Log
 import com.example.model.User
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.firestore.FirebaseFirestore
@@ -358,6 +359,96 @@ class AuthRepository {
         }
     }
     
+    suspend fun changeCurrentUserPassword(
+        currentPassword: String,
+        newPassword: String,
+        expectedRole: String
+    ): Result<Unit> {
+        val firebaseUser = auth.currentUser
+            ?: return Result.failure(Exception("No active login session found. Please log in again."))
+
+        val email = firebaseUser.email?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return Result.failure(Exception("Account email is unavailable for re-authentication."))
+
+        if (currentPassword.isBlank()) {
+            return Result.failure(Exception("Please enter your current password."))
+        }
+        if (newPassword.length < 6) {
+            return Result.failure(Exception("New password must be at least 6 characters long."))
+        }
+        if (newPassword == currentPassword) {
+            return Result.failure(Exception("New password must be different from your current password."))
+        }
+
+        return try {
+            val userDoc = db.collection("users").document(firebaseUser.uid).get().await()
+            if (!userDoc.exists()) {
+                return Result.failure(Exception("User profile not found."))
+            }
+
+            val profileRole = (userDoc.getString("role") ?: "").trim().lowercase()
+            val profileStatus = (userDoc.getString("accountStatus") ?: "").trim().lowercase()
+            val targetRole = expectedRole.trim().lowercase()
+
+            if (profileRole != targetRole) {
+                return Result.failure(
+                    Exception("Access denied: This account cannot change password from this section.")
+                )
+            }
+
+            if (targetRole == "public" && profileStatus != "active") {
+                return Result.failure(Exception("Your public account is not active."))
+            }
+            if (targetRole == "admin" && (profileStatus == "blocked" || profileStatus == "suspended")) {
+                return Result.failure(Exception("Account Suspended: Please contact the administrator."))
+            }
+
+            val credential = EmailAuthProvider.getCredential(email, currentPassword)
+            firebaseUser.reauthenticate(credential).await()
+            firebaseUser.updatePassword(newPassword).await()
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            val errorCode = if (e is FirebaseAuthException) e.errorCode else "UNKNOWN"
+            val message = when (errorCode) {
+                "ERROR_WRONG_PASSWORD",
+                "ERROR_INVALID_CREDENTIAL",
+                "INVALID_LOGIN_CREDENTIALS" ->
+                    "Current password is incorrect. Please check and try again."
+                "ERROR_WEAK_PASSWORD" ->
+                    "New password is too weak. Please use at least 6 characters."
+                "ERROR_REQUIRES_RECENT_LOGIN" ->
+                    "Session expired for security. Please log in again and retry."
+                "ERROR_USER_MISMATCH" ->
+                    "Authentication mismatch for the currently signed-in account."
+                "ERROR_TOO_MANY_REQUESTS" ->
+                    "Too many attempts. Please wait a moment and try again."
+                else -> e.message ?: "Failed to update password. Please try again."
+            }
+            Result.failure(Exception(message))
+        }
+    }
+
+    suspend fun sendPasswordResetEmail(email: String): Result<Unit> {
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isEmpty()) {
+            return Result.failure(Exception("Please enter your email address."))
+        }
+        return try {
+            auth.sendPasswordResetEmail(trimmedEmail).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            val errorCode = if (e is FirebaseAuthException) e.errorCode else "UNKNOWN"
+            val message = when (errorCode) {
+                "ERROR_INVALID_EMAIL" -> "Please enter a valid email address."
+                "ERROR_USER_NOT_FOUND" -> "No account found with this email address."
+                "ERROR_TOO_MANY_REQUESTS" -> "Too many reset requests. Please try again later."
+                else -> e.message ?: "Failed to send password reset email."
+            }
+            Result.failure(Exception(message))
+        }
+    }
+
     suspend fun deleteUser(userId: String): Result<Unit> {
         return try {
             db.collection("users").document(userId).delete().await()

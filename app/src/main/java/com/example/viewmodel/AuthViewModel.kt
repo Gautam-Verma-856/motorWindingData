@@ -24,6 +24,20 @@ sealed class EmailVerificationStatus {
     data class Error(val message: String) : EmailVerificationStatus()
 }
 
+sealed class ChangePasswordState {
+    object Idle : ChangePasswordState()
+    object Loading : ChangePasswordState()
+    data class Success(val message: String) : ChangePasswordState()
+    data class Error(val message: String) : ChangePasswordState()
+}
+
+sealed class PasswordResetState {
+    object Idle : PasswordResetState()
+    object Loading : PasswordResetState()
+    data class Success(val message: String) : PasswordResetState()
+    data class Error(val message: String) : PasswordResetState()
+}
+
 class AuthViewModel : ViewModel() {
     private val repo = AuthRepository()
 
@@ -47,6 +61,12 @@ class AuthViewModel : ViewModel() {
 
     private val _isSessionChecking = MutableStateFlow(true)
     val isSessionChecking = _isSessionChecking.asStateFlow()
+
+    private val _changePasswordState = MutableStateFlow<ChangePasswordState>(ChangePasswordState.Idle)
+    val changePasswordState = _changePasswordState.asStateFlow()
+
+    private val _passwordResetState = MutableStateFlow<PasswordResetState>(PasswordResetState.Idle)
+    val passwordResetState = _passwordResetState.asStateFlow()
 
     init {
         checkSession()
@@ -182,6 +202,8 @@ class AuthViewModel : ViewModel() {
         _authState.value = AuthState.Idle
         _usersList.value = emptyList()
         resetEmailVerificationState()
+        resetChangePasswordState()
+        resetPasswordResetState()
     }
     
     fun fetchUsers() {
@@ -223,5 +245,87 @@ class AuthViewModel : ViewModel() {
         if (_currentUser.value == null) {
             _authState.value = AuthState.Idle
         }
+    }
+
+    fun validateChangePasswordInput(
+        currentPassword: String,
+        newPassword: String,
+        confirmPassword: String
+    ): String? {
+        return when {
+            currentPassword.isBlank() -> "Current password is required."
+            newPassword.isBlank() -> "New password is required."
+            confirmPassword.isBlank() -> "Confirm new password is required."
+            newPassword.length < 6 -> "New password must be at least 6 characters."
+            newPassword == currentPassword -> "New password must be different from current password."
+            newPassword != confirmPassword -> "New password and confirm password do not match."
+            else -> null
+        }
+    }
+
+    fun changePassword(
+        currentPassword: String,
+        newPassword: String,
+        confirmPassword: String,
+        expectedRole: String
+    ) {
+        val activeUser = _currentUser.value
+        if (activeUser == null || !activeUser.role.trim().equals(expectedRole.trim(), ignoreCase = true)) {
+            _changePasswordState.value = ChangePasswordState.Error(
+                "Access denied: Only the signed-in ${expectedRole.lowercase()} account can change its password here."
+            )
+            return
+        }
+
+        val validationError = validateChangePasswordInput(currentPassword, newPassword, confirmPassword)
+        if (validationError != null) {
+            _changePasswordState.value = ChangePasswordState.Error(validationError)
+            return
+        }
+
+        _changePasswordState.value = ChangePasswordState.Loading
+        viewModelScope.launch {
+            val res = repo.changeCurrentUserPassword(currentPassword, newPassword, expectedRole)
+            res.onSuccess {
+                _changePasswordState.value = ChangePasswordState.Success(
+                    "Your password has been updated securely."
+                )
+            }
+            res.onFailure {
+                _changePasswordState.value = ChangePasswordState.Error(
+                    it.message ?: "Failed to update password."
+                )
+            }
+        }
+    }
+
+    fun resetChangePasswordState() {
+        _changePasswordState.value = ChangePasswordState.Idle
+    }
+
+    fun sendPasswordResetEmail(email: String) {
+        val trimmed = email.trim()
+        if (trimmed.isEmpty() || !android.util.Patterns.EMAIL_ADDRESS.matcher(trimmed).matches()) {
+            _passwordResetState.value = PasswordResetState.Error("Please enter a valid email address.")
+            return
+        }
+        _passwordResetState.value = PasswordResetState.Loading
+        viewModelScope.launch {
+            val res = repo.sendPasswordResetEmail(trimmed)
+            res.onSuccess {
+                _passwordResetState.value = PasswordResetState.Success(
+                    "Password reset link sent to $trimmed. Please check your inbox and spam folder."
+                )
+            }
+            res.onFailure {
+                _passwordResetState.value = PasswordResetState.Error(
+                    it.message ?: "Failed to send password reset email."
+                )
+            }
+        }
+    }
+
+    fun resetPasswordResetState() {
+        _passwordResetState.value = PasswordResetState.Idle
     }
 }
