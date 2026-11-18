@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.model.MotorConnectionOptions
+import com.example.model.SinglePhaseCategories
 import com.example.model.SinglePhaseMotor
 import com.example.model.ThreePhaseMotor
 import com.example.viewmodel.MotorViewModel
@@ -49,7 +50,8 @@ fun AddEditMotorScreen(
     motorViewModel: MotorViewModel,
     type: String,
     id: String?,
-    authViewModel: AuthViewModel
+    authViewModel: AuthViewModel,
+    initialCategory: String? = null
 ) {
     val currentUser by authViewModel.currentUser.collectAsState()
     if (currentUser == null) {
@@ -96,7 +98,15 @@ fun AddEditMotorScreen(
     var existingCreatedBy by remember { mutableStateOf("") }
     var existingCreatedByName by remember { mutableStateOf("") }
     var existingStatus by remember { mutableStateOf("approved") }
-    var category by remember { mutableStateOf(if (type == "single") "Self Priming (Tullu Pump)" else "Monoblock") }
+    val defaultCategory = remember(type, initialCategory) {
+        if (type == "single") {
+            if (!initialCategory.isNullOrBlank()) SinglePhaseCategories.resolveEditableCategory(initialCategory)
+            else SinglePhaseCategories.SELF_PRIMING
+        } else {
+            if (!initialCategory.isNullOrBlank()) initialCategory else "Monoblock"
+        }
+    }
+    var category by remember(id, defaultCategory) { mutableStateOf(defaultCategory) }
     var isUploading by remember { mutableStateOf(false) }
     var uploadProgress by remember { mutableStateOf(0) }
     var totalUploads by remember { mutableStateOf(0) }
@@ -126,9 +136,7 @@ fun AddEditMotorScreen(
                     existingCreatedBy = motor.createdBy
                     existingCreatedByName = motor.createdByName
                     existingStatus = motor.status
-                    if (motor.category.isNotEmpty()) {
-                        category = motor.category
-                    }
+                    category = SinglePhaseCategories.resolveEditableCategory(motor.category)
                     photoUrl = motor.photoUrl
                     companyName = motor.companyName
                     hp = motor.hp
@@ -343,7 +351,7 @@ fun AddEditMotorScreen(
             if (type == "single") {
                 FormSection("Motor Category & Info", Icons.Rounded.Category) {
                     Text("Select Motor Category *", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    val singleCategories = listOf("Self Priming (Tullu Pump)", "Submersible Motor", "Pandubi", "General / Other Motors")
+                    val singleCategories = SinglePhaseCategories.ALL_OPTIONS
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -353,7 +361,8 @@ fun AddEditMotorScreen(
                                 selected = category == cat,
                                 onClick = { category = cat },
                                 label = { Text(cat, fontWeight = if (category == cat) FontWeight.Bold else FontWeight.Normal) },
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("single_category_chip_${cat.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')}")
                             )
                         }
                     }

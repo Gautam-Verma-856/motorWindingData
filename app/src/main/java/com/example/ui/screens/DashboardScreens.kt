@@ -44,15 +44,13 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
     val context = LocalContext.current
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
-    val customMotors by motorViewModel.customMotors.collectAsState()
-    val customCategories by motorViewModel.customCategories.collectAsState()
     val usersList by authViewModel.usersList.collectAsState()
     val currentUser by authViewModel.currentUser.collectAsState()
     
-    val pendingCount = singlePhaseMotors.count { it.status == "pending" } + threePhaseMotors.count { it.status == "pending" } + customMotors.count { it.status == "pending" }
-    val approvedCount = singlePhaseMotors.count { it.status == "approved" } + threePhaseMotors.count { it.status == "approved" } + customMotors.count { it.status == "approved" }
-    val rejectedCount = singlePhaseMotors.count { it.status == "rejected" } + threePhaseMotors.count { it.status == "rejected" } + customMotors.count { it.status == "rejected" }
-    val totalMotorsCount = singlePhaseMotors.size + threePhaseMotors.size + customMotors.size
+    val pendingCount = singlePhaseMotors.count { it.status == "pending" } + threePhaseMotors.count { it.status == "pending" }
+    val approvedCount = singlePhaseMotors.count { it.status == "approved" } + threePhaseMotors.count { it.status == "approved" }
+    val rejectedCount = singlePhaseMotors.count { it.status == "rejected" } + threePhaseMotors.count { it.status == "rejected" }
+    val totalMotorsCount = singlePhaseMotors.size + threePhaseMotors.size
     
     val pendingUsersCount = usersList.count { it.role == "public" && it.accountStatus == "pending" }
     val activeUsersCount = usersList.count { it.role == "public" && it.accountStatus == "active" }
@@ -60,8 +58,7 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
 
     val unseenPendingSingle = singlePhaseMotors.count { it.isUnseen() }
     val unseenPendingThree = threePhaseMotors.count { it.isUnseen() }
-    val unseenPendingCustom = customMotors.count { it.isUnseen() }
-    val unseenPendingMotorsCount = unseenPendingSingle + unseenPendingThree + unseenPendingCustom
+    val unseenPendingMotorsCount = unseenPendingSingle + unseenPendingThree
     val unseenPendingUsersCount = usersList.count { it.isUnseen() }
     val totalUnseenCount = unseenPendingMotorsCount + unseenPendingUsersCount
     val hasUnreadNotifications = totalUnseenCount > 0
@@ -74,8 +71,7 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
 
     if (showNotificationsDialog) {
         val pendingMotors = (singlePhaseMotors.filter { it.isPending() }.map { Triple("single", it.id, it.companyName) } +
-                            threePhaseMotors.filter { it.isPending() }.map { Triple("three", it.id, it.name) } +
-                            customMotors.filter { it.isPending() }.map { Triple("custom", it.id, it.companyName) })
+                            threePhaseMotors.filter { it.isPending() }.map { Triple("three", it.id, it.name) })
         val pendingUsers = usersList.filter { it.role == "public" && it.accountStatus == "pending" }
 
         AlertDialog(
@@ -116,8 +112,7 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                         items(pendingMotors) { (mType, mId, mName) ->
                             val isItemUnseen = when (mType) {
                                 "single" -> singlePhaseMotors.find { it.id == mId }?.isUnseen() == true
-                                "three" -> threePhaseMotors.find { it.id == mId }?.isUnseen() == true
-                                else -> customMotors.find { it.id == mId }?.isUnseen() == true
+                                else -> threePhaseMotors.find { it.id == mId }?.isUnseen() == true
                             }
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
@@ -125,11 +120,7 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                                 modifier = Modifier.fillMaxWidth().clickable {
                                     motorViewModel.markMotorAsSeen(mType, mId)
                                     showNotificationsDialog = false
-                                    if (mType == "custom") {
-                                        navController.navigate("custom_motor_detail/$mId")
-                                    } else {
-                                        navController.navigate("motor_detail/$mType/$mId")
-                                    }
+                                    navController.navigate("motor_detail/$mType/$mId")
                                 }
                             ) {
                                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -137,7 +128,7 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                                     Spacer(Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("Pending Motor: $mName", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
-                                        Text(if (mType == "single") "Single Phase Motor" else if (mType == "three") "3 Phase Motor" else "Custom Motor", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(if (mType == "single") "Single Phase Motor" else "3 Phase Motor", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     if (isItemUnseen) {
                                         Box(modifier = Modifier.size(8.dp).background(Color(0xFFEF4444), CircleShape))
@@ -330,14 +321,6 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     badgeCount = pendingUsersCount,
                     hasUnreadDot = (unseenPendingUsersCount > 0)
                 ) { navController.navigate("user_management") }
-
-                PremiumActionCard(
-                    title = "Manage Custom Categories",
-                    subtitle = "Add categories (e.g. Cooler Motor) & custom fields",
-                    icon = Icons.Rounded.Category,
-                    accentColor = Color(0xFFEC4899),
-                    badgeCount = customCategories.size
-                ) { navController.navigate("manage_custom_categories") }
             }
 
             AdminSectionTitle("Account Settings")
@@ -380,10 +363,8 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
 fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewModel, motorViewModel: MotorViewModel) {
     val context = LocalContext.current
     val currentUser by authViewModel.currentUser.collectAsState()
-    val customCategories by motorViewModel.customCategories.collectAsState()
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
-    val customMotors by motorViewModel.customMotors.collectAsState()
 
     if (currentUser == null) {
         LaunchedEffect(Unit) {
@@ -393,8 +374,8 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
     }
 
     val uid = currentUser?.id ?: ""
-    val mySubmissionsCount = singlePhaseMotors.count { it.createdBy == uid } + threePhaseMotors.count { it.createdBy == uid } + customMotors.count { it.createdBy == uid }
-    val approvedMotorsCount = singlePhaseMotors.count { it.isExplicitlyApproved() } + threePhaseMotors.count { it.isExplicitlyApproved() } + customMotors.count { it.isExplicitlyApproved() }
+    val mySubmissionsCount = singlePhaseMotors.count { it.createdBy == uid } + threePhaseMotors.count { it.createdBy == uid }
+    val approvedMotorsCount = singlePhaseMotors.count { it.isExplicitlyApproved() } + threePhaseMotors.count { it.isExplicitlyApproved() }
 
     LaunchedEffect(currentUser) {
         motorViewModel.loadData(isAdmin = false, userId = currentUser?.id)
@@ -447,7 +428,7 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
 
                 PremiumActionCard(
                     title = "Browse Categories",
-                    subtitle = "Explore Single Phase, 3 Phase & Custom categories",
+                    subtitle = "Explore Single Phase & 3 Phase categories",
                     icon = Icons.Rounded.Category,
                     accentColor = Color(0xFF06B6D4),
                     badgeCount = 0
@@ -478,26 +459,6 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                     onClick = { navController.navigate("add_edit_motor/three/new") },
                     modifier = Modifier.weight(1f)
                 )
-            }
-
-            val submittableCategories = customCategories.filter { it.allowPublicSubmissions }
-            if (submittableCategories.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                AdminSectionTitle("Add Custom Category Motor Data")
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    submittableCategories.forEach { cat ->
-                        OutlinedButton(
-                            onClick = { navController.navigate("add_edit_custom_motor/${cat.id}/new") },
-                            modifier = Modifier.fillMaxWidth().height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Add ${cat.name} Data", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
             }
             
             AdminSectionTitle("Account Settings")

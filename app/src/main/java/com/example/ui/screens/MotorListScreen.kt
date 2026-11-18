@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -32,8 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.example.model.CustomMotor
 import com.example.model.MotorConnectionOptions
+import com.example.model.SinglePhaseCategories
 import com.example.model.SinglePhaseMotor
 import com.example.model.ThreePhaseMotor
 import com.example.ui.components.ConfirmationDialog
@@ -57,7 +59,6 @@ fun MotorListScreen(
     val isLoadingData by motorViewModel.isLoadingData.collectAsState()
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
-    val customMotors by motorViewModel.customMotors.collectAsState()
 
     var motorToDelete by remember { mutableStateOf<String?>(null) }
     var deleteType by remember { mutableStateOf<String?>(null) }
@@ -105,7 +106,7 @@ fun MotorListScreen(
     } else if (uiState is UiState.Success) {
         val action = (uiState as UiState.Success).message
         val title = when (action) {
-            "delete", "delete_custom_motor" -> "Deleted Successfully"
+            "delete" -> "Deleted Successfully"
             "approve" -> "Approved Successfully"
             "reject" -> "Submission Rejected"
             else -> "Success"
@@ -131,7 +132,6 @@ fun MotorListScreen(
                 when (deleteType) {
                     "single" -> motorViewModel.deleteSinglePhase(motorToDelete!!)
                     "three" -> motorViewModel.deleteThreePhase(motorToDelete!!)
-                    "custom" -> motorViewModel.deleteCustomMotor(motorToDelete!!)
                 }
                 motorToDelete = null
                 deleteType = null
@@ -149,7 +149,6 @@ fun MotorListScreen(
                 when (rejectType) {
                     "single" -> motorViewModel.updateSinglePhaseStatus(motorToReject!!, "rejected", reason)
                     "three" -> motorViewModel.updateThreePhaseStatus(motorToReject!!, "rejected", reason)
-                    "custom" -> motorViewModel.updateCustomMotorStatus(motorToReject!!, "rejected", reason)
                 }
                 motorToReject = null
                 rejectType = null
@@ -170,7 +169,7 @@ fun MotorListScreen(
     }
 
     // CATEGORY DEFINITIONS
-    val singleCategories = listOf("Self Priming (Tullu Pump)", "Submersible Motor", "Pandubi", "General / Other Motors")
+    val singleCategories = SinglePhaseCategories.ALL_OPTIONS
     val threeCategories = listOf("Monoblock", "Submersible", "Pandubi", "General / Other Motors")
 
     // CHECK IF CATEGORY SELECTION SHOULD BE DISPLAYED
@@ -244,11 +243,7 @@ fun MotorListScreen(
                     val (count, compCount) = if (isSingle) {
                         val matching = singlePhaseMotors.filter { motor ->
                             val statusOk = if (role == "admin") true else motor.isExplicitlyApproved()
-                            val catOk = if (cat == "General / Other Motors") {
-                                motor.category.isBlank() || motor.category.equals("General / Other Motors", ignoreCase = true) || motor.category !in singleCategories.take(3)
-                            } else {
-                                motor.category.equals(cat, ignoreCase = true)
-                            }
+                            val catOk = SinglePhaseCategories.matchesCategory(motor.category, cat)
                             statusOk && catOk
                         }
                         val comps = matching.map { it.companyName.trim().lowercase() }.filter { it.isNotEmpty() }.distinct().size
@@ -279,8 +274,10 @@ fun MotorListScreen(
                         icon = when {
                             cat.contains("Submersible", ignoreCase = true) -> Icons.Rounded.Waves
                             cat.contains("Pandubi", ignoreCase = true) -> Icons.Rounded.Water
+                            cat.contains("Cooler", ignoreCase = true) || cat.contains("Exhaust", ignoreCase = true) -> Icons.Rounded.Air
+                            cat.contains("Washing", ignoreCase = true) -> Icons.Rounded.LocalLaundryService
                             cat.contains("Monoblock", ignoreCase = true) -> Icons.Rounded.Build
-                            cat.contains("General", ignoreCase = true) -> Icons.Rounded.Folder
+                            cat.equals(SinglePhaseCategories.OTHER, ignoreCase = true) || cat.contains("General", ignoreCase = true) -> Icons.Rounded.Folder
                             else -> Icons.Rounded.ElectricMeter
                         },
                         onClick = {
@@ -331,11 +328,7 @@ fun MotorListScreen(
             singlePhaseMotors
         }
         if (type != "single" || selectedCategory == null) baseList
-        else if (selectedCategory == "General / Other Motors") {
-            baseList.filter { it.category.isBlank() || it.category.equals("General / Other Motors", ignoreCase = true) || it.category !in singleCategories.take(3) }
-        } else {
-            baseList.filter { it.category.equals(selectedCategory, ignoreCase = true) }
-        }
+        else baseList.filter { SinglePhaseCategories.matchesCategory(it.category, selectedCategory!!) }
     }
 
     val threeInCategory = remember(threePhaseMotors, selectedCategory, type, role) {
@@ -363,6 +356,13 @@ fun MotorListScreen(
         }
         val unique = names.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }.sortedWith(String.CASE_INSENSITIVE_ORDER)
         listOf("All") + unique
+    }
+
+    BackHandler(enabled = selectedCategory != null) {
+        selectedCategory = null
+        selectedCompany = "All"
+        selectedConnectionFilter = "All"
+        searchQuery = ""
     }
 
     Scaffold(
@@ -399,6 +399,19 @@ fun MotorListScreen(
                     containerColor = MaterialTheme.colorScheme.background
                 )
             )
+        },
+        floatingActionButton = {
+            if (isSingleOrThree && selectedCategory != null) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        val encodedCat = Uri.encode(selectedCategory!!)
+                        navController.navigate("add_edit_motor/$type/new?category=$encodedCat")
+                    },
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Add Motor Data", fontWeight = FontWeight.Bold) },
+                    modifier = Modifier.testTag("add_motor_in_category_fab")
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -466,38 +479,36 @@ fun MotorListScreen(
                 }
 
                 // CONNECTION FILTER CHIPS
-                if (type == "single" || type == "three" || selectedFilter != "Custom Categories") {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        "Filter by Connection:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    val connectionFilterOptions = listOf("All") + MotorConnectionOptions.DROPDOWN_OPTIONS
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        connectionFilterOptions.forEach { connOption ->
-                            FilterChip(
-                                selected = selectedConnectionFilter == connOption,
-                                onClick = { selectedConnectionFilter = connOption },
-                                label = { Text(connOption) },
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier.testTag("connection_filter_${connOption.lowercase().replace("-", "_")}")
-                            )
-                        }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    "Filter by Connection:",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                val connectionFilterOptions = listOf("All") + MotorConnectionOptions.DROPDOWN_OPTIONS
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    connectionFilterOptions.forEach { connOption ->
+                        FilterChip(
+                            selected = selectedConnectionFilter == connOption,
+                            onClick = { selectedConnectionFilter = connOption },
+                            label = { Text(connOption) },
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.testTag("connection_filter_${connOption.lowercase().replace("-", "_")}")
+                        )
                     }
                 }
 
                 // TABS FOR APPROVED / PENDING / REJECTED / ALL / MY_SUBMISSIONS
                 if (type == "approved" || type == "pending" || type == "rejected" || type == "all" || type == "my_submissions") {
                     Spacer(modifier = Modifier.height(10.dp))
-                    val filters = listOf("All", "Single Phase", "Three Phase", "Custom Categories")
+                    val filters = listOf("All", "Single Phase", "Three Phase")
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -594,37 +605,11 @@ fun MotorListScreen(
                 matchesType && matchesStatus && matchesCompany && matchesConnection && matchesSearch && matchesFilterChip && publicBrowseAllowed
             }
 
-            val filteredCustom = customMotors.filter { motor ->
-                val matchesType = when (type) {
-                    "approved" -> motor.isExplicitlyApproved()
-                    "pending" -> motor.isPending()
-                    "rejected" -> motor.isRejected()
-                    "all" -> true
-                    "my_submissions" -> (targetUserId.isNotEmpty() && motor.createdBy == targetUserId)
-                    else -> if (role == "admin") true else false
-                }
-                val matchesStatus = when (selectedStatus) {
-                    "Pending" -> motor.isPending()
-                    "Approved" -> motor.isExplicitlyApproved()
-                    "Rejected" -> motor.isRejected()
-                    else -> true
-                }
-                val matchesConnection = selectedConnectionFilter == "All"
-                val matchesSearch = searchQuery.isBlank() ||
-                        motor.companyName.contains(searchQuery, ignoreCase = true) ||
-                        motor.motorName.contains(searchQuery, ignoreCase = true) ||
-                        motor.hp.contains(searchQuery, ignoreCase = true) ||
-                        motor.customFields.values.any { it.contains(searchQuery, ignoreCase = true) }
-                val matchesFilterChip = selectedFilter == "All" || selectedFilter == "Custom Categories"
-                val publicBrowseAllowed = if (role != "admin" && type != "my_submissions") motor.isExplicitlyApproved() else true
-                matchesType && matchesStatus && matchesConnection && matchesSearch && matchesFilterChip && publicBrowseAllowed
-            }
-
             if (isLoadingData) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else if (filteredSingle.isEmpty() && filteredThree.isEmpty() && filteredCustom.isEmpty()) {
+            } else if (filteredSingle.isEmpty() && filteredThree.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     EmptyStateView(type = type, selectedCategory = selectedCategory)
                 }
@@ -660,23 +645,6 @@ fun MotorListScreen(
                             onDelete = { motorToDelete = motor.id; deleteType = "three" },
                             onApprove = { motorViewModel.updateThreePhaseStatus(motor.id, "approved") },
                             onReject = { motorToReject = motor.id; rejectType = "three" },
-                            onPhotoClick = { urls, idx ->
-                                fullScreenPhotos = urls
-                                fullScreenInitialIndex = idx
-                            }
-                        )
-                    }
-                    items(filteredCustom, key = { "custom_${it.id}" }) { motor ->
-                        CustomMotorCard(
-                            motor = motor,
-                            category = com.example.model.CustomCategory(id = motor.categoryId, name = motor.categoryName),
-                            role = role,
-                            currentUserId = currentUserId,
-                            onView = { navController.navigate("custom_motor_detail/${motor.id}") },
-                            onEdit = { navController.navigate("add_edit_custom_motor/${motor.categoryId}/${motor.id}") },
-                            onDelete = { motorToDelete = motor.id; deleteType = "custom" },
-                            onApprove = { motorViewModel.updateCustomMotorStatus(motor.id, "approved") },
-                            onReject = { motorToReject = motor.id; rejectType = "custom" },
                             onPhotoClick = { urls, idx ->
                                 fullScreenPhotos = urls
                                 fullScreenInitialIndex = idx

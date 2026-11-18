@@ -91,7 +91,6 @@ fun HomeScreen(
         return
     }
 
-    val customCategories = motorViewModel?.customCategories?.collectAsState()?.value ?: emptyList()
     val isAdmin = currentUser.role.trim().equals("admin", ignoreCase = true)
     var headerVisible by remember { mutableStateOf(false) }
     var cardsVisible by remember { mutableStateOf(false) }
@@ -163,22 +162,6 @@ fun HomeScreen(
                                     onClick = { menuExpanded = false; navController.navigate("motor_list/three") },
                                     leadingIcon = { Icon(Icons.Rounded.Build, contentDescription = null, tint = Color(0xFF10B981)) }
                                 )
-                                if (customCategories.isNotEmpty()) {
-                                    customCategories.forEach { cat ->
-                                        DropdownMenuItem(
-                                            text = { Text(cat.name) },
-                                            onClick = { menuExpanded = false; navController.navigate("custom_motor_list/${cat.id}") },
-                                            leadingIcon = { Icon(Icons.Rounded.Category, contentDescription = null, tint = Color(0xFF8B5CF6)) }
-                                        )
-                                    }
-                                }
-                                if (isAdmin) {
-                                    DropdownMenuItem(
-                                        text = { Text("Manage Categories") },
-                                        onClick = { menuExpanded = false; navController.navigate("manage_custom_categories") },
-                                        leadingIcon = { Icon(Icons.Rounded.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-                                    )
-                                }
                                 DropdownMenuItem(
                                     text = { Text("Contact Details") },
                                     onClick = { menuExpanded = false; navController.navigate("contact") },
@@ -264,28 +247,6 @@ fun HomeScreen(
                         gradientColors = listOf(Color(0xFF10B981), Color(0xFF3B82F6)),
                         onClick = { navController.navigate("motor_list/three") }
                     )
-
-                    if (customCategories.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            "Custom Categories",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-
-                        customCategories.forEach { cat ->
-                            GlassmorphicActionCard(
-                                title = cat.name,
-                                subtitle = if (cat.description.isNotEmpty()) cat.description else "Explore Winding Data",
-                                icon = Icons.Rounded.Category,
-                                iconTint = Color(0xFF8B5CF6),
-                                gradientColors = listOf(Color(0xFF8B5CF6), Color(0xFFEC4899)),
-                                onClick = { navController.navigate("custom_motor_list/${cat.id}") }
-                            )
-                        }
-                    }
                 }
             }
 

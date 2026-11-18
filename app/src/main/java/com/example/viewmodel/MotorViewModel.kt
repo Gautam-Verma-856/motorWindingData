@@ -67,8 +67,6 @@ class MotorViewModel : ViewModel() {
             _isLoadingData.value = true
             repo.getSinglePhaseMotors(isAdmin, effectiveUid).onSuccess { _singlePhaseMotors.value = it }
             repo.getThreePhaseMotors(isAdmin, effectiveUid).onSuccess { _threePhaseMotors.value = it }
-            repo.getCustomCategories(isAdmin).onSuccess { _customCategories.value = it }
-            repo.getCustomMotors(isAdmin, effectiveUid).onSuccess { _customMotors.value = it }
             _isLoadingData.value = false
         }
     }

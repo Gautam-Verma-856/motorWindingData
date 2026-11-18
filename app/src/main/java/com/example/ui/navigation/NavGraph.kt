@@ -173,106 +173,6 @@ fun NavGraph() {
                 PublicChangePasswordScreen(navController = navController, authViewModel = authViewModel)
             }
         }
-        composable("manage_custom_categories") {
-            if (currentUser == null || !currentUser!!.role.equals("admin", ignoreCase = true)) {
-                LaunchedEffect(Unit) {
-                    navController.navigate("public_login") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
-            } else {
-                ManageCustomCategoriesScreen(navController = navController, authViewModel = authViewModel, motorViewModel = motorViewModel)
-            }
-        }
-        composable(
-            "custom_motor_list/{categoryId}",
-            arguments = listOf(navArgument("categoryId") { type = NavType.StringType })
-        ) { backStackEntry ->
-            if (currentUser == null) {
-                LaunchedEffect(Unit) {
-                    navController.navigate("public_login") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
-            } else {
-                val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
-                CustomMotorListScreen(
-                    navController = navController,
-                    motorViewModel = motorViewModel,
-                    categoryId = categoryId,
-                    currentUser = currentUser
-                )
-            }
-        }
-        composable(
-            "custom_motor_detail/{id}",
-            arguments = listOf(navArgument("id") { type = NavType.StringType })
-        ) { backStackEntry ->
-            if (currentUser == null) {
-                LaunchedEffect(Unit) {
-                    navController.navigate("public_login") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
-            } else {
-                val id = backStackEntry.arguments?.getString("id") ?: ""
-                CustomMotorDetailScreen(
-                    navController = navController,
-                    motorViewModel = motorViewModel,
-                    id = id,
-                    role = currentUser?.role ?: "public",
-                    currentUser = currentUser
-                )
-            }
-        }
-        composable(
-            "add_edit_custom_motor/{categoryId}/{id}",
-            arguments = listOf(
-                navArgument("categoryId") { type = NavType.StringType },
-                navArgument("id") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            if (currentUser == null) {
-                LaunchedEffect(Unit) {
-                    navController.navigate("public_login") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
-            } else {
-                val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
-                val id = backStackEntry.arguments?.getString("id")
-                AddEditCustomMotorScreen(
-                    navController = navController,
-                    motorViewModel = motorViewModel,
-                    categoryId = categoryId,
-                    id = id,
-                    authViewModel = authViewModel
-                )
-            }
-        }
-        composable(
-            "add_custom_motor/{categoryId}",
-            arguments = listOf(
-                navArgument("categoryId") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            if (currentUser == null) {
-                LaunchedEffect(Unit) {
-                    navController.navigate("public_login") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
-            } else {
-                val categoryId = backStackEntry.arguments?.getString("categoryId") ?: ""
-                AddEditCustomMotorScreen(
-                    navController = navController,
-                    motorViewModel = motorViewModel,
-                    categoryId = categoryId,
-                    id = "new",
-                    authViewModel = authViewModel
-                )
-            }
-        }
         composable(
             "motor_list/{type}",
             arguments = listOf(navArgument("type") { type = NavType.StringType })
@@ -315,10 +215,15 @@ fun NavGraph() {
             }
         }
         composable(
-            "add_edit_motor/{type}/{id}",
+            "add_edit_motor/{type}/{id}?category={category}",
             arguments = listOf(
                 navArgument("type") { type = NavType.StringType },
-                navArgument("id") { type = NavType.StringType }
+                navArgument("id") { type = NavType.StringType },
+                navArgument("category") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
             )
         ) { backStackEntry ->
             if (currentUser == null) {
@@ -330,7 +235,15 @@ fun NavGraph() {
             } else {
                 val type = backStackEntry.arguments?.getString("type") ?: "single"
                 val id = backStackEntry.arguments?.getString("id")
-                AddEditMotorScreen(navController = navController, motorViewModel = motorViewModel, type = type, id = id, authViewModel = authViewModel)
+                val category = backStackEntry.arguments?.getString("category")
+                AddEditMotorScreen(
+                    navController = navController,
+                    motorViewModel = motorViewModel,
+                    type = type,
+                    id = id,
+                    authViewModel = authViewModel,
+                    initialCategory = category
+                )
             }
         }
         composable(

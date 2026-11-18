@@ -33,11 +33,57 @@ object MotorConnectionOptions {
     }
 }
 
+object SinglePhaseCategories {
+    const val SELF_PRIMING = "Self Priming (Tullu Pump)"
+    const val SUBMERSIBLE = "Submersible Motor"
+    const val PANDUBI = "Pandubi"
+    const val COOLER_EXHAUST = "Cooler Motor / Exhaust Motor"
+    const val WASHING_MACHINE = "Washing Machine Motor"
+    const val OTHER = "Other"
+
+    val ALL_OPTIONS = listOf(
+        SELF_PRIMING,
+        SUBMERSIBLE,
+        PANDUBI,
+        COOLER_EXHAUST,
+        WASHING_MACHINE,
+        OTHER
+    )
+
+    private val PRIMARY_OPTIONS = listOf(
+        SELF_PRIMING,
+        SUBMERSIBLE,
+        PANDUBI,
+        COOLER_EXHAUST,
+        WASHING_MACHINE
+    )
+
+    fun matchesCategory(motorCategory: String, selectedCategory: String): Boolean {
+        val normalizedMotorCat = motorCategory.trim()
+        return if (selectedCategory == OTHER) {
+            normalizedMotorCat.isEmpty() ||
+                normalizedMotorCat.equals(OTHER, ignoreCase = true) ||
+                normalizedMotorCat.equals("General / Other Motors", ignoreCase = true) ||
+                PRIMARY_OPTIONS.none { it.equals(normalizedMotorCat, ignoreCase = true) }
+        } else {
+            normalizedMotorCat.equals(selectedCategory, ignoreCase = true)
+        }
+    }
+
+    fun resolveEditableCategory(motorCategory: String): String {
+        val normalized = motorCategory.trim()
+        if (normalized.isEmpty() || normalized.equals("General / Other Motors", ignoreCase = true)) {
+            return OTHER
+        }
+        return ALL_OPTIONS.firstOrNull { it.equals(normalized, ignoreCase = true) } ?: OTHER
+    }
+}
+
 data class SinglePhaseMotor(
     val id: String = "",
     val photoUrl: String = "", // Kept for backward compatibility
     val photoUrls: List<String> = emptyList(),
-    val category: String = "", // "Self Priming (Tullu Pump)", "Submersible Motor", "Pandubi", or ""
+    val category: String = "", // SinglePhaseCategories options or legacy "" / "General / Other Motors"
     val companyName: String = "",
     val hp: String = "",
     val capacitor: String = "",

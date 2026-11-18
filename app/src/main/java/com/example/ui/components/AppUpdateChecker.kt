@@ -8,6 +8,11 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -21,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,6 +54,17 @@ data class UpdateConfig(
 private fun isDirectApkUrl(url: String): Boolean {
     val cleanUrl = url.substringBefore("?").substringBefore("#").lowercase(Locale.US)
     return cleanUrl.endsWith(".apk")
+}
+
+internal fun isUpdateAvailable(currentVersionCode: Int, config: UpdateConfig): Boolean {
+    return currentVersionCode < config.latestVersionCode ||
+        currentVersionCode < config.minimumSupportedVersionCode
+}
+
+internal fun isUpdateMandatory(currentVersionCode: Int, config: UpdateConfig): Boolean {
+    // Optional Update System: forceUpdate and minimumSupportedVersionCode behave as optional updates
+    // so users always retain the "Later" option and are never blocked from the existing app.
+    return false
 }
 
 @Composable
@@ -138,8 +155,7 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
                     forceUpdate = forceUpdate
                 )
 
-                val needsUpdate = currentVersionCode < config.latestVersionCode ||
-                    currentVersionCode < config.minimumSupportedVersionCode
+                val needsUpdate = isUpdateAvailable(currentVersionCode, config)
 
                 Log.d(
                     "AppUpdateChecker",
@@ -163,7 +179,7 @@ fun AppUpdateWrapper(content: @Composable () -> Unit) {
 
         if (showDialog && updateConfig != null) {
             val config = updateConfig!!
-            val isMandatory = config.forceUpdate || currentVersionCode < config.minimumSupportedVersionCode
+            val isMandatory = isUpdateMandatory(currentVersionCode, config)
 
             AppUpdateDialog(
                 config = config,
@@ -238,6 +254,7 @@ fun AppUpdateDialog(
         )
     ) {
         Surface(
+            modifier = Modifier.testTag("update_dialog"),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp
@@ -254,20 +271,26 @@ fun AppUpdateDialog(
                         .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (downloadState is DownloadState.Success) {
-                        Icon(
-                            imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = "Update Ready",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(40.dp)
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Rounded.SystemUpdate,
-                            contentDescription = "Update Available",
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(32.dp)
-                        )
+                    AnimatedContent(
+                        targetState = downloadState is DownloadState.Success,
+                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        label = "update_icon_transition"
+                    ) { isReady ->
+                        if (isReady) {
+                            Icon(
+                                imageVector = Icons.Rounded.CheckCircle,
+                                contentDescription = "Update Ready",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.SystemUpdate,
+                                contentDescription = "Update Available",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
                     }
                 }
 
@@ -318,8 +341,12 @@ fun AppUpdateDialog(
                 if (isDownloading) {
                     Spacer(modifier = Modifier.height(16.dp))
                     if (downloadState is DownloadState.Progress && downloadState.progress >= 0) {
+                        val animatedProgress by animateFloatAsState(
+                            targetValue = (downloadState.progress.toFloat() / 100f).coerceIn(0f, 1f),
+                            label = "update_download_progress"
+                        )
                         LinearProgressIndicator(
-                            progress = { downloadState.progress.toFloat() / 100f },
+                            progress = { animatedProgress },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp),
@@ -366,23 +393,38 @@ fun AppUpdateDialog(
                         onClick = onInstall,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp),
+                            .height(50.dp)
+                            .testTag("update_install_button"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("Install Update", fontWeight = FontWeight.Bold)
+                        Text("Install Latest Version", fontWeight = FontWeight.Bold)
+                    }
+                    if (!isMandatory) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("update_later_button"),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Later", fontWeight = FontWeight.Bold)
+                        }
                     }
                 } else if (!isDownloading) {
                     Button(
                         onClick = onUpdate,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp),
+                            .height(50.dp)
+                            .testTag("update_install_button"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Text(
-                            if (downloadState is DownloadState.Error) "Retry Download" else "Update Now",
+                            if (downloadState is DownloadState.Error) "Retry Download" else "Install Latest Version",
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -402,11 +444,12 @@ fun AppUpdateDialog(
 
                     if (!isMandatory) {
                         Spacer(modifier = Modifier.height(12.dp))
-                        TextButton(
+                        OutlinedButton(
                             onClick = onDismiss,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp),
+                                .height(48.dp)
+                                .testTag("update_later_button"),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text("Later", fontWeight = FontWeight.Bold)
