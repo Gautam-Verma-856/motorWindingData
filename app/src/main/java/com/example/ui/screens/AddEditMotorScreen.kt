@@ -65,6 +65,7 @@ fun AddEditMotorScreen(
 
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
+    val searchResults by motorViewModel.searchResults.collectAsState()
     val uiState by motorViewModel.uiState.collectAsState()
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -127,10 +128,20 @@ fun AddEditMotorScreen(
         }
     }
 
-    LaunchedEffect(id, singlePhaseMotors, threePhaseMotors) {
+    LaunchedEffect(id, type, currentUser?.role) {
+        if (id != null && id != "new") {
+            motorViewModel.ensureMotorLoaded(
+                type = type,
+                id = id,
+                isAdmin = currentUser?.role?.equals("admin", ignoreCase = true) == true
+            )
+        }
+    }
+
+    LaunchedEffect(id, singlePhaseMotors, threePhaseMotors, searchResults) {
         if (id != null && id != "new" && !isLoadedForId) {
             if (type == "single") {
-                val motor = singlePhaseMotors.find { it.id == id }
+                val motor = motorViewModel.findSinglePhaseMotor(id)
                 if (motor != null) {
                     existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
                     existingCreatedBy = motor.createdBy
@@ -158,7 +169,7 @@ fun AddEditMotorScreen(
                     isLoadedForId = true
                 }
             } else {
-                val motor = threePhaseMotors.find { it.id == id }
+                val motor = motorViewModel.findThreePhaseMotor(id)
                 if (motor != null) {
                     existingPhotoUrls = motor.photoUrls.ifEmpty { if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList() }
                     existingCreatedBy = motor.createdBy

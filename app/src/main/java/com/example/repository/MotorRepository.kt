@@ -9,7 +9,11 @@ import com.example.model.SinglePhaseMotor
 import com.example.model.ThreePhaseMotor
 import com.example.model.CustomCategory
 import com.example.model.CustomMotor
+import com.example.model.SearchMotorType
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.QuerySnapshot
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -24,7 +28,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class MotorRepository {
-    private val db = FirebaseFirestore.getInstance()
+    private val db: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -711,6 +715,158 @@ class MotorRepository {
                 )
             ).await()
             Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // --- Paginated Search & Detail Lookup Methods ---
+    data class PaginatedSearchPage(
+        val singlePhaseMotors: List<SinglePhaseMotor>,
+        val threePhaseMotors: List<ThreePhaseMotor>,
+        val nextSingleCursor: DocumentSnapshot?,
+        val nextThreeCursor: DocumentSnapshot?,
+        val hasMoreSingle: Boolean,
+        val hasMoreThree: Boolean
+    )
+
+    private suspend fun executePaginatedCollectionQuery(
+        collectionName: String,
+        isAdmin: Boolean,
+        cursor: DocumentSnapshot?,
+        pageSize: Long
+    ): QuerySnapshot {
+        val base = db.collection(collectionName)
+        return if (isAdmin) {
+            try {
+                var q: Query = base.orderBy("createdAt", Query.Direction.DESCENDING)
+                if (cursor != null) q = q.startAfter(cursor)
+                q.limit(pageSize).get().await()
+            } catch (_: Exception) {
+                var q: Query = base
+                if (cursor != null) q = q.startAfter(cursor)
+                q.limit(pageSize).get().await()
+            }
+        } else {
+            // Public Search MUST query ONLY approved records to comply with firestore.rules
+            try {
+                var q: Query = base
+                    .whereIn("status", listOf("approved", "APPROVED", "Approved"))
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                if (cursor != null) q = q.startAfter(cursor)
+                q.limit(pageSize).get().await()
+            } catch (_: Exception) {
+                try {
+                    var q: Query = base.whereIn("status", listOf("approved", "APPROVED", "Approved"))
+                    if (cursor != null) q = q.startAfter(cursor)
+                    q.limit(pageSize).get().await()
+                } catch (_: Exception) {
+                    var q: Query = base.whereEqualTo("status", "approved")
+                    if (cursor != null) q = q.startAfter(cursor)
+                    q.limit(pageSize).get().await()
+                }
+            }
+        }
+    }
+
+    suspend fun fetchSearchMotorPage(
+        isAdmin: Boolean,
+        motorType: SearchMotorType = SearchMotorType.ALL,
+        fetchSingle: Boolean = motorType != SearchMotorType.THREE_PHASE,
+        fetchThree: Boolean = motorType != SearchMotorType.SINGLE_PHASE,
+        singleCursor: DocumentSnapshot? = null,
+        threeCursor: DocumentSnapshot? = null,
+        pageSize: Long = 25L
+    ): Result<PaginatedSearchPage> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (authUser == null) {
+            return Result.failure(Exception("Authentication required"))
+        }
+        return try {
+            var singleMotors = emptyList<SinglePhaseMotor>()
+            var nextSingleCursor = singleCursor
+            var hasMoreSingle = false
+
+            if (fetchSingle) {
+                val snap = executePaginatedCollectionQuery(
+                    collectionName = "single_phase_motors",
+                    isAdmin = isAdmin,
+                    cursor = singleCursor,
+                    pageSize = pageSize
+                )
+                val parsed = snap.toObjects(SinglePhaseMotor::class.java)
+                singleMotors = if (isAdmin) parsed else parsed.filter { it.isExplicitlyApproved() }
+                nextSingleCursor = snap.documents.lastOrNull() ?: singleCursor
+                hasMoreSingle = snap.documents.size.toLong() >= pageSize
+            }
+
+            var threeMotors = emptyList<ThreePhaseMotor>()
+            var nextThreeCursor = threeCursor
+            var hasMoreThree = false
+
+            if (fetchThree) {
+                val snap = executePaginatedCollectionQuery(
+                    collectionName = "three_phase_motors",
+                    isAdmin = isAdmin,
+                    cursor = threeCursor,
+                    pageSize = pageSize
+                )
+                val parsed = snap.toObjects(ThreePhaseMotor::class.java)
+                threeMotors = if (isAdmin) parsed else parsed.filter { it.isExplicitlyApproved() }
+                nextThreeCursor = snap.documents.lastOrNull() ?: threeCursor
+                hasMoreThree = snap.documents.size.toLong() >= pageSize
+            }
+
+            Result.success(
+                PaginatedSearchPage(
+                    singlePhaseMotors = singleMotors,
+                    threePhaseMotors = threeMotors,
+                    nextSingleCursor = nextSingleCursor,
+                    nextThreeCursor = nextThreeCursor,
+                    hasMoreSingle = hasMoreSingle,
+                    hasMoreThree = hasMoreThree
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getSinglePhaseMotorById(id: String, isAdmin: Boolean): Result<SinglePhaseMotor?> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (authUser == null || id.isBlank()) {
+            return Result.failure(Exception("Authentication required"))
+        }
+        return try {
+            val doc = db.collection("single_phase_motors").document(id).get().await()
+            val motor = doc.toObject(SinglePhaseMotor::class.java)
+            if (motor == null) {
+                Result.success(null)
+            } else if (!isAdmin && !motor.isExplicitlyApproved() && motor.createdBy != authUser.uid) {
+                Result.failure(Exception("Access denied"))
+            } else {
+                Result.success(motor)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getThreePhaseMotorById(id: String, isAdmin: Boolean): Result<ThreePhaseMotor?> {
+        val authUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (authUser == null || id.isBlank()) {
+            return Result.failure(Exception("Authentication required"))
+        }
+        return try {
+            val doc = db.collection("three_phase_motors").document(id).get().await()
+            val motor = doc.toObject(ThreePhaseMotor::class.java)
+            if (motor == null) {
+                Result.success(null)
+            } else if (!isAdmin && !motor.isExplicitlyApproved() && motor.createdBy != authUser.uid) {
+                Result.failure(Exception("Access denied"))
+            } else {
+                Result.success(motor)
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }

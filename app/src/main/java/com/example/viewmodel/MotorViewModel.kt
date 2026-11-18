@@ -4,11 +4,17 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.model.SinglePhaseMotor
-import com.example.model.ThreePhaseMotor
 import com.example.model.CustomCategory
 import com.example.model.CustomMotor
+import com.example.model.MotorSearchEngine
+import com.example.model.MotorSearchFilter
+import com.example.model.MotorSearchItem
+import com.example.model.SearchMotorType
+import com.example.model.SearchSortOption
+import com.example.model.SinglePhaseMotor
+import com.example.model.ThreePhaseMotor
 import com.example.repository.MotorRepository
+import com.google.firebase.firestore.DocumentSnapshot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -42,6 +48,40 @@ class MotorViewModel : ViewModel() {
     private var lastIsAdmin: Boolean = false
     private var lastUserId: String? = null
 
+    // --- Advanced Search State & Paginated Cache ---
+    private val _draftSearchFilter = MutableStateFlow(MotorSearchFilter())
+    val draftSearchFilter = _draftSearchFilter.asStateFlow()
+
+    private val _appliedSearchFilter = MutableStateFlow(MotorSearchFilter())
+    val appliedSearchFilter = _appliedSearchFilter.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<MotorSearchItem>>(emptyList())
+    val searchResults = _searchResults.asStateFlow()
+
+    private val _isSearchLoading = MutableStateFlow(false)
+    val isSearchLoading = _isSearchLoading.asStateFlow()
+
+    private val _isSearchLoadingMore = MutableStateFlow(false)
+    val isSearchLoadingMore = _isSearchLoadingMore.asStateFlow()
+
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError = _searchError.asStateFlow()
+
+    private val _hasMoreSearchResults = MutableStateFlow(false)
+    val hasMoreSearchResults = _hasMoreSearchResults.asStateFlow()
+
+    private val _loadedSearchCount = MutableStateFlow(0)
+    val loadedSearchCount = _loadedSearchCount.asStateFlow()
+
+    private var _searchSingleCache: List<SinglePhaseMotor> = emptyList()
+    private var _searchThreeCache: List<ThreePhaseMotor> = emptyList()
+    private var searchSingleCursor: DocumentSnapshot? = null
+    private var searchThreeCursor: DocumentSnapshot? = null
+    private var hasMoreSearchSingle: Boolean = false
+    private var hasMoreSearchThree: Boolean = false
+    private var hasInitializedSearchCache: Boolean = false
+    private var searchCacheIsAdmin: Boolean? = null
+
     fun clearData() {
         _singlePhaseMotors.value = emptyList()
         _threePhaseMotors.value = emptyList()
@@ -51,6 +91,23 @@ class MotorViewModel : ViewModel() {
         _isLoadingData.value = false
         lastIsAdmin = false
         lastUserId = null
+
+        _draftSearchFilter.value = MotorSearchFilter()
+        _appliedSearchFilter.value = MotorSearchFilter()
+        _searchResults.value = emptyList()
+        _isSearchLoading.value = false
+        _isSearchLoadingMore.value = false
+        _searchError.value = null
+        _hasMoreSearchResults.value = false
+        _loadedSearchCount.value = 0
+        _searchSingleCache = emptyList()
+        _searchThreeCache = emptyList()
+        searchSingleCursor = null
+        searchThreeCursor = null
+        hasMoreSearchSingle = false
+        hasMoreSearchThree = false
+        hasInitializedSearchCache = false
+        searchCacheIsAdmin = null
     }
 
     fun loadData(isAdmin: Boolean = lastIsAdmin, userId: String? = lastUserId) {
@@ -87,6 +144,7 @@ class MotorViewModel : ViewModel() {
                     listOf(savedMotor) + currentList
                 }
                 _singlePhaseMotors.value = updatedList
+                upsertSearchSingleCache(savedMotor)
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("save")
             }.onFailure {
@@ -99,6 +157,7 @@ class MotorViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             _singlePhaseMotors.value = _singlePhaseMotors.value.filter { it.id != id }
+            removeFromSearchSingleCache(id)
             repo.deleteSinglePhaseMotor(id).onSuccess {
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("delete")
@@ -120,6 +179,7 @@ class MotorViewModel : ViewModel() {
                     listOf(savedMotor) + currentList
                 }
                 _threePhaseMotors.value = updatedList
+                upsertSearchThreeCache(savedMotor)
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("save")
             }.onFailure {
@@ -132,6 +192,7 @@ class MotorViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = UiState.Loading
             _threePhaseMotors.value = _threePhaseMotors.value.filter { it.id != id }
+            removeFromSearchThreeCache(id)
             repo.deleteThreePhaseMotor(id).onSuccess {
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success("delete")
@@ -154,6 +215,7 @@ class MotorViewModel : ViewModel() {
                     seen = true
                 ) else it
             }
+            updateSearchSingleStatusCache(id, status, rejectionReason)
             repo.updateSinglePhaseStatus(id, status, rejectionReason).onSuccess {
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
@@ -176,6 +238,7 @@ class MotorViewModel : ViewModel() {
                     seen = true
                 ) else it
             }
+            updateSearchThreeStatusCache(id, status, rejectionReason)
             repo.updateThreePhaseStatus(id, status, rejectionReason).onSuccess {
                 loadData(lastIsAdmin, lastUserId)
                 _uiState.value = UiState.Success(if (status == "approved") "approve" else "reject")
@@ -315,5 +378,286 @@ class MotorViewModel : ViewModel() {
 
     fun getSafeDiagnostic(): MotorRepository.SafeDiagnostic {
         return repo.getSafeDiagnostic()
+    }
+
+    // --- Advanced Search Operations ---
+    private fun recomputeSearchResults(isAdmin: Boolean = searchCacheIsAdmin ?: lastIsAdmin) {
+        val unified = MotorSearchEngine.buildUnifiedList(_searchSingleCache, _searchThreeCache)
+        _loadedSearchCount.value = unified.size
+        _searchResults.value = MotorSearchEngine.filterAndSort(
+            items = unified,
+            filter = _appliedSearchFilter.value,
+            isAdmin = isAdmin
+        )
+        _hasMoreSearchResults.value = when (_appliedSearchFilter.value.motorType) {
+            SearchMotorType.SINGLE_PHASE -> hasMoreSearchSingle
+            SearchMotorType.THREE_PHASE -> hasMoreSearchThree
+            SearchMotorType.ALL -> hasMoreSearchSingle || hasMoreSearchThree
+        }
+    }
+
+    private fun upsertSearchSingleCache(motor: SinglePhaseMotor) {
+        if (!hasInitializedSearchCache) return
+        val isAdmin = searchCacheIsAdmin ?: lastIsAdmin
+        if (!isAdmin && !motor.isExplicitlyApproved()) return
+        _searchSingleCache = if (_searchSingleCache.any { it.id == motor.id }) {
+            _searchSingleCache.map { if (it.id == motor.id) motor else it }
+        } else {
+            listOf(motor) + _searchSingleCache
+        }
+        recomputeSearchResults(isAdmin)
+    }
+
+    private fun upsertSearchThreeCache(motor: ThreePhaseMotor) {
+        if (!hasInitializedSearchCache) return
+        val isAdmin = searchCacheIsAdmin ?: lastIsAdmin
+        if (!isAdmin && !motor.isExplicitlyApproved()) return
+        _searchThreeCache = if (_searchThreeCache.any { it.id == motor.id }) {
+            _searchThreeCache.map { if (it.id == motor.id) motor else it }
+        } else {
+            listOf(motor) + _searchThreeCache
+        }
+        recomputeSearchResults(isAdmin)
+    }
+
+    private fun removeFromSearchSingleCache(id: String) {
+        if (!hasInitializedSearchCache) return
+        _searchSingleCache = _searchSingleCache.filter { it.id != id }
+        recomputeSearchResults()
+    }
+
+    private fun removeFromSearchThreeCache(id: String) {
+        if (!hasInitializedSearchCache) return
+        _searchThreeCache = _searchThreeCache.filter { it.id != id }
+        recomputeSearchResults()
+    }
+
+    private fun updateSearchSingleStatusCache(id: String, status: String, rejectionReason: String) {
+        if (!hasInitializedSearchCache) return
+        _searchSingleCache = _searchSingleCache.map {
+            if (it.id == id) it.copy(
+                status = status,
+                rejectionReason = if (status == "rejected") rejectionReason.trim() else "",
+                adminSeen = true,
+                seen = true
+            ) else it
+        }
+        recomputeSearchResults()
+    }
+
+    private fun updateSearchThreeStatusCache(id: String, status: String, rejectionReason: String) {
+        if (!hasInitializedSearchCache) return
+        _searchThreeCache = _searchThreeCache.map {
+            if (it.id == id) it.copy(
+                status = status,
+                rejectionReason = if (status == "rejected") rejectionReason.trim() else "",
+                adminSeen = true,
+                seen = true
+            ) else it
+        }
+        recomputeSearchResults()
+    }
+
+    private fun currentAuthUserOrNull(): com.google.firebase.auth.FirebaseUser? {
+        return try {
+            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun initSearch(isAdmin: Boolean) {
+        if (hasInitializedSearchCache && searchCacheIsAdmin == isAdmin) {
+            recomputeSearchResults(isAdmin)
+            return
+        }
+        val currentFirebaseUser = currentAuthUserOrNull() ?: return
+        if (currentFirebaseUser.uid.isBlank()) return
+        refreshSearch(isAdmin)
+    }
+
+    fun refreshSearch(isAdmin: Boolean = searchCacheIsAdmin ?: lastIsAdmin) {
+        val currentFirebaseUser = currentAuthUserOrNull()
+        if (currentFirebaseUser == null) {
+            _searchError.value = "Authentication required to search motors."
+            return
+        }
+        searchCacheIsAdmin = isAdmin
+        viewModelScope.launch {
+            _isSearchLoading.value = true
+            _searchError.value = null
+            searchSingleCursor = null
+            searchThreeCursor = null
+            hasMoreSearchSingle = false
+            hasMoreSearchThree = false
+
+            repo.fetchSearchMotorPage(
+                isAdmin = isAdmin,
+                motorType = SearchMotorType.ALL,
+                fetchSingle = true,
+                fetchThree = true,
+                singleCursor = null,
+                threeCursor = null,
+                pageSize = 25L
+            ).onSuccess { page ->
+                _searchSingleCache = page.singlePhaseMotors.distinctBy { it.id }
+                _searchThreeCache = page.threePhaseMotors.distinctBy { it.id }
+                searchSingleCursor = page.nextSingleCursor
+                searchThreeCursor = page.nextThreeCursor
+                hasMoreSearchSingle = page.hasMoreSingle
+                hasMoreSearchThree = page.hasMoreThree
+                hasInitializedSearchCache = true
+                recomputeSearchResults(isAdmin)
+            }.onFailure { err ->
+                _searchError.value = err.message ?: "Failed to load motors from cloud."
+            }
+            _isSearchLoading.value = false
+        }
+    }
+
+    fun loadMoreSearchResults() {
+        val isAdmin = searchCacheIsAdmin ?: lastIsAdmin
+        if (_isSearchLoading.value || _isSearchLoadingMore.value) return
+        val needSingle = _appliedSearchFilter.value.motorType != SearchMotorType.THREE_PHASE && hasMoreSearchSingle
+        val needThree = _appliedSearchFilter.value.motorType != SearchMotorType.SINGLE_PHASE && hasMoreSearchThree
+        if (!needSingle && !needThree) return
+
+        viewModelScope.launch {
+            _isSearchLoadingMore.value = true
+            _searchError.value = null
+            repo.fetchSearchMotorPage(
+                isAdmin = isAdmin,
+                motorType = _appliedSearchFilter.value.motorType,
+                fetchSingle = needSingle,
+                fetchThree = needThree,
+                singleCursor = searchSingleCursor,
+                threeCursor = searchThreeCursor,
+                pageSize = 25L
+            ).onSuccess { page ->
+                if (needSingle) {
+                    _searchSingleCache = (_searchSingleCache + page.singlePhaseMotors).distinctBy { it.id }
+                    searchSingleCursor = page.nextSingleCursor
+                    hasMoreSearchSingle = page.hasMoreSingle
+                }
+                if (needThree) {
+                    _searchThreeCache = (_searchThreeCache + page.threePhaseMotors).distinctBy { it.id }
+                    searchThreeCursor = page.nextThreeCursor
+                    hasMoreSearchThree = page.hasMoreThree
+                }
+                recomputeSearchResults(isAdmin)
+            }.onFailure { err ->
+                _searchError.value = err.message ?: "Failed to load more results."
+            }
+            _isSearchLoadingMore.value = false
+        }
+    }
+
+    fun updateSearchQuery(query: String) {
+        _draftSearchFilter.value = _draftSearchFilter.value.copy(query = query)
+        _appliedSearchFilter.value = _appliedSearchFilter.value.copy(query = query)
+        if (hasInitializedSearchCache) {
+            recomputeSearchResults()
+        }
+    }
+
+    fun updateDraftFilter(transform: (MotorSearchFilter) -> MotorSearchFilter) {
+        val updated = transform(_draftSearchFilter.value)
+        val validCategories = MotorSearchEngine.categoriesForMotorType(updated.motorType)
+        val sanitizedCategory = if (validCategories.any { it.equals(updated.category, ignoreCase = true) }) {
+            updated.category
+        } else {
+            "All"
+        }
+        _draftSearchFilter.value = updated.copy(category = sanitizedCategory)
+    }
+
+    fun applyFilters() {
+        val isAdmin = searchCacheIsAdmin ?: lastIsAdmin
+        val draft = _draftSearchFilter.value
+        val sanitized = if (isAdmin) draft else draft.copy(approvalStatus = com.example.model.SearchApprovalStatus.ALL)
+        _draftSearchFilter.value = sanitized
+        _appliedSearchFilter.value = sanitized
+        if (hasInitializedSearchCache) {
+            recomputeSearchResults(isAdmin)
+        }
+    }
+
+    fun clearAllFilters() {
+        val fresh = MotorSearchFilter()
+        _draftSearchFilter.value = fresh
+        _appliedSearchFilter.value = fresh
+        if (hasInitializedSearchCache) {
+            recomputeSearchResults()
+        }
+    }
+
+    fun updateSortOption(sortOption: SearchSortOption) {
+        _draftSearchFilter.value = _draftSearchFilter.value.copy(sortBy = sortOption)
+        _appliedSearchFilter.value = _appliedSearchFilter.value.copy(sortBy = sortOption)
+        if (hasInitializedSearchCache) {
+            recomputeSearchResults()
+        }
+    }
+
+    fun seedSearchDataForTest(
+        singlePhaseMotors: List<SinglePhaseMotor>,
+        threePhaseMotors: List<ThreePhaseMotor>,
+        isAdmin: Boolean,
+        hasMore: Boolean = false
+    ) {
+        searchCacheIsAdmin = isAdmin
+        _searchSingleCache = if (isAdmin) singlePhaseMotors else singlePhaseMotors.filter { it.isExplicitlyApproved() }
+        _searchThreeCache = if (isAdmin) threePhaseMotors else threePhaseMotors.filter { it.isExplicitlyApproved() }
+        hasMoreSearchSingle = hasMore
+        hasMoreSearchThree = false
+        hasInitializedSearchCache = true
+        _isSearchLoading.value = false
+        _isSearchLoadingMore.value = false
+        _searchError.value = null
+        recomputeSearchResults(isAdmin)
+    }
+
+    fun setSearchErrorForTest(message: String?, isAdmin: Boolean = false) {
+        searchCacheIsAdmin = isAdmin
+        hasInitializedSearchCache = true
+        _isSearchLoading.value = false
+        _isSearchLoadingMore.value = false
+        _searchError.value = message
+    }
+
+    fun findSinglePhaseMotor(id: String): SinglePhaseMotor? {
+        return _singlePhaseMotors.value.find { it.id == id }
+            ?: _searchSingleCache.find { it.id == id }
+    }
+
+    fun findThreePhaseMotor(id: String): ThreePhaseMotor? {
+        return _threePhaseMotors.value.find { it.id == id }
+            ?: _searchThreeCache.find { it.id == id }
+    }
+
+    fun ensureMotorLoaded(type: String, id: String, isAdmin: Boolean) {
+        if (id.isBlank()) return
+        if (type == "single" && findSinglePhaseMotor(id) != null) return
+        if (type == "three" && findThreePhaseMotor(id) != null) return
+        val currentFirebaseUser = currentAuthUserOrNull() ?: return
+        if (currentFirebaseUser.uid.isBlank()) return
+
+        viewModelScope.launch {
+            if (type == "single") {
+                repo.getSinglePhaseMotorById(id, isAdmin).onSuccess { motor ->
+                    if (motor != null) {
+                        _singlePhaseMotors.value = (_singlePhaseMotors.value + motor).distinctBy { it.id }
+                        upsertSearchSingleCache(motor)
+                    }
+                }
+            } else if (type == "three") {
+                repo.getThreePhaseMotorById(id, isAdmin).onSuccess { motor ->
+                    if (motor != null) {
+                        _threePhaseMotors.value = (_threePhaseMotors.value + motor).distinctBy { it.id }
+                        upsertSearchThreeCache(motor)
+                    }
+                }
+            }
+        }
     }
 }

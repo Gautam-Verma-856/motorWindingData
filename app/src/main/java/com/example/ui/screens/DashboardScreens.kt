@@ -281,6 +281,14 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
             
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 PremiumActionCard(
+                    title = "Advanced Search",
+                    subtitle = "Search & filter all motors by HP, RPM, Amps, SWG & more",
+                    icon = Icons.Rounded.ManageSearch,
+                    accentColor = Color(0xFF06B6D4),
+                    modifier = Modifier.testTag("admin_advanced_search_card")
+                ) { navController.navigate("advanced_search") }
+
+                PremiumActionCard(
                     title = "Pending Approval",
                     subtitle = "Review public motor submissions",
                     icon = Icons.Rounded.PendingActions,
@@ -418,6 +426,14 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
         ) {
             AdminSectionTitle("Main Actions")
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                PremiumActionCard(
+                    title = "Advanced Search",
+                    subtitle = "Search verified motors by HP, RPM, Amps, SWG & more",
+                    icon = Icons.Rounded.ManageSearch,
+                    accentColor = Color(0xFF06B6D4),
+                    modifier = Modifier.testTag("public_advanced_search_card")
+                ) { navController.navigate("advanced_search") }
+
                 PremiumActionCard(
                     title = "Approved Motors",
                     subtitle = "Browse verified motor winding data",

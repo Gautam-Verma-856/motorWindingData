@@ -173,6 +173,21 @@ fun NavGraph() {
                 PublicChangePasswordScreen(navController = navController, authViewModel = authViewModel)
             }
         }
+        composable("advanced_search") {
+            if (currentUser == null) {
+                LaunchedEffect(Unit) {
+                    navController.navigate("public_login") {
+                        popUpTo(0) { inclusive = true }
+                    }
+                }
+            } else {
+                AdvancedSearchScreen(
+                    navController = navController,
+                    motorViewModel = motorViewModel,
+                    role = currentUser?.role ?: "public"
+                )
+            }
+        }
         composable(
             "motor_list/{type}",
             arguments = listOf(navArgument("type") { type = NavType.StringType })

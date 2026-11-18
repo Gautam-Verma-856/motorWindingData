@@ -11,6 +11,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Speed
@@ -44,30 +46,48 @@ fun MotorDetailScreen(
 ) {
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
+    val searchResults by motorViewModel.searchResults.collectAsState()
+    val uiState by motorViewModel.uiState.collectAsState()
+    val isAdmin = role.trim().equals("admin", ignoreCase = true)
 
     var fullScreenPhotos by remember { mutableStateOf<List<String>?>(null) }
     var fullScreenInitialIndex by remember { mutableIntStateOf(0) }
     var showRejectDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(id, type) {
-        if (role == "admin") {
+    LaunchedEffect(id, type, isAdmin) {
+        motorViewModel.ensureMotorLoaded(type, id, isAdmin = isAdmin)
+        if (isAdmin) {
             motorViewModel.markMotorAsSeen(type, id)
         }
     }
 
+    val singleMotor = remember(id, type, singlePhaseMotors, searchResults) {
+        if (type == "single") motorViewModel.findSinglePhaseMotor(id) else null
+    }
+    val threeMotor = remember(id, type, threePhaseMotors, searchResults) {
+        if (type != "single") motorViewModel.findThreePhaseMotor(id) else null
+    }
+
+    val motorExists = (type == "single" && singleMotor != null) || (type != "single" && threeMotor != null)
     val motorName: String
     val motorSubtitle: String
     
     if (type == "single") {
-        val motor = singlePhaseMotors.find { it.id == id }
-        motorName = motor?.companyName ?: "Details"
-        val catInfo = if (motor?.category?.isNotEmpty() == true) "${motor.category} • " else ""
-        motorSubtitle = "Single Phase • ${catInfo}${motor?.hp ?: "?"} HP"
+        motorName = singleMotor?.companyName ?: "Details"
+        val catInfo = if (singleMotor?.category?.isNotEmpty() == true) "${singleMotor.category} • " else ""
+        motorSubtitle = "Single Phase • ${catInfo}${singleMotor?.hp ?: "?"} HP"
     } else {
-        val motor = threePhaseMotors.find { it.id == id }
-        motorName = motor?.name ?: "Details"
-        val catInfo = if (motor?.category?.isNotEmpty() == true) "${motor.category} • " else ""
-        motorSubtitle = "3 Phase • ${catInfo}${motor?.hp ?: "?"} HP"
+        motorName = threeMotor?.name ?: "Details"
+        val catInfo = if (threeMotor?.category?.isNotEmpty() == true) "${threeMotor.category} • " else ""
+        motorSubtitle = "3 Phase • ${catInfo}${threeMotor?.hp ?: "?"} HP"
+    }
+
+    if (uiState is com.example.viewmodel.UiState.Success && (uiState as com.example.viewmodel.UiState.Success).message == "delete") {
+        LaunchedEffect(Unit) {
+            motorViewModel.resetUiState()
+            navController.navigateUp()
+        }
     }
 
     Scaffold(
@@ -82,6 +102,16 @@ fun MotorDetailScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (isAdmin && motorExists) {
+                        IconButton(onClick = { navController.navigate("add_edit_motor/$type/$id") }) {
+                            Icon(Icons.Rounded.Edit, contentDescription = "Edit Motor", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Rounded.Delete, contentDescription = "Delete Motor", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -101,7 +131,7 @@ fun MotorDetailScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             if (type == "single") {
-                val motor = singlePhaseMotors.find { it.id == id }
+                val motor = singleMotor
                 if (motor != null) {
                     val displayUrls = if (motor.photoUrls.isNotEmpty()) motor.photoUrls else if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList()
                     if (displayUrls.isNotEmpty()) {
@@ -208,7 +238,7 @@ fun MotorDetailScreen(
                         DetailRow("Weight", motor.startingWeight)
                     }
                     
-                    if (motor.createdByName.isNotBlank()) {
+                    if (isAdmin && motor.createdByName.isNotBlank()) {
                         AddedByCard(name = motor.createdByName)
                     }
 
@@ -259,7 +289,7 @@ fun MotorDetailScreen(
                     Text("Motor not found.")
                 }
             } else {
-                val motor = threePhaseMotors.find { it.id == id }
+                val motor = threeMotor
                 if (motor != null) {
                     val displayUrls = if (motor.photoUrls.isNotEmpty()) motor.photoUrls else if (motor.photoUrl.isNotEmpty()) listOf(motor.photoUrl) else emptyList()
                     if (displayUrls.isNotEmpty()) {
@@ -356,7 +386,7 @@ fun MotorDetailScreen(
                         DetailRow("Weight", motor.weight)
                     }
                     
-                    if (motor.createdByName.isNotBlank()) {
+                    if (isAdmin && motor.createdByName.isNotBlank()) {
                         AddedByCard(name = motor.createdByName)
                     }
 
@@ -430,6 +460,24 @@ fun MotorDetailScreen(
                 showRejectDialog = false
             },
             onDismiss = { showRejectDialog = false }
+        )
+    }
+
+    if (showDeleteDialog) {
+        com.example.ui.components.ConfirmationDialog(
+            title = "Delete Motor Data?",
+            message = "This action cannot be undone.",
+            confirmText = "Delete",
+            isDestructive = true,
+            onConfirm = {
+                if (type == "single") {
+                    motorViewModel.deleteSinglePhase(id)
+                } else {
+                    motorViewModel.deleteThreePhase(id)
+                }
+                showDeleteDialog = false
+            },
+            onDismiss = { showDeleteDialog = false }
         )
     }
 }
