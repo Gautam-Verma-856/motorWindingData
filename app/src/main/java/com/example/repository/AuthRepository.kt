@@ -449,6 +449,51 @@ class AuthRepository {
         }
     }
 
+    suspend fun updateUserProfile(
+        name: String,
+        mobile: String,
+        photoUrl: String
+    ): Result<User> {
+        val firebaseUser = auth.currentUser
+            ?: return Result.failure(Exception("No active login session found. Please log in again."))
+        val trimmedName = name.trim()
+        val trimmedMobile = mobile.trim()
+        val trimmedPhotoUrl = photoUrl.trim()
+
+        if (trimmedName.isEmpty()) {
+            return Result.failure(Exception("Full name is required."))
+        }
+
+        return try {
+            val uid = firebaseUser.uid
+            val userDocRef = db.collection("users").document(uid)
+            val snapshot = userDocRef.get().await()
+            if (!snapshot.exists()) {
+                return Result.failure(Exception("User profile not found."))
+            }
+            val existingUser = snapshot.toObject(User::class.java)
+                ?: return Result.failure(Exception("Unable to load user profile."))
+
+            val updates = mapOf(
+                "name" to trimmedName,
+                "mobile" to trimmedMobile,
+                "photoUrl" to trimmedPhotoUrl
+            )
+            userDocRef.update(updates).await()
+
+            Result.success(
+                existingUser.copy(
+                    id = uid,
+                    name = trimmedName,
+                    mobile = trimmedMobile,
+                    photoUrl = trimmedPhotoUrl
+                )
+            )
+        } catch (e: Exception) {
+            Result.failure(Exception(e.message ?: "Failed to update profile."))
+        }
+    }
+
     suspend fun deleteUser(userId: String): Result<Unit> {
         return try {
             db.collection("users").document(userId).delete().await()

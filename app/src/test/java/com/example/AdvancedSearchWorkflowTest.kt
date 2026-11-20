@@ -1,5 +1,8 @@
 package com.example
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -335,7 +338,7 @@ class AdvancedSearchWorkflowTest {
     }
 
     @Test
-    fun publicAdvancedSearchScreen_hidesAdminControlsAndPrivateData_andSupportsFiltersAndClearAll() {
+    fun publicAdvancedSearchScreen_startsEmpty_validatesEmptySearch_andSearchesByKeywordFiltersAndClearSearch() {
         val viewModel = MotorViewModel()
         viewModel.seedSearchDataForTest(
             singlePhaseMotors = sampleSinglePhaseMotors(),
@@ -356,48 +359,109 @@ class AdvancedSearchWorkflowTest {
         }
         composeRule.waitForIdle()
 
-        // Public sees only 6 approved records; pending/rejected never appear
-        composeRule.onNodeWithText("6 Matches").assertIsDisplayed()
+        // 1. Initial open shows ONLY heading, search input, Search button, and compact Filters button (collapsed)
+        composeRule.onNodeWithText("Advanced Search").assertIsDisplayed()
+        composeRule.onNodeWithTag("advanced_search_input").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_submit_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("toggle_filters_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("toggle_filters_button").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed")
+        )
+        composeRule.onNodeWithTag("filters_state_indicator", useUnmergedTree = true).assertExists()
+
+        // Filter fields & Clear Filters & Results MUST be completely hidden by default
+        composeRule.onNodeWithTag("advanced_filter_panel").assertDoesNotExist()
+        composeRule.onNodeWithTag("filter_type_single").assertDoesNotExist()
+        composeRule.onNodeWithTag("hp_exact_input").assertDoesNotExist()
+        composeRule.onNodeWithTag("rpm_exact_input").assertDoesNotExist()
+        composeRule.onNodeWithTag("amps_exact_input").assertDoesNotExist()
+        composeRule.onNodeWithTag("swg_filter_input").assertDoesNotExist()
+        composeRule.onNodeWithTag("coil_size_filter_input").assertDoesNotExist()
+        composeRule.onNodeWithTag("clear_filters_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("filter_status_pending").assertDoesNotExist()
+        composeRule.onNodeWithTag("search_results_count").assertDoesNotExist()
+        composeRule.onNodeWithTag("sort_hp").assertDoesNotExist()
+        composeRule.onNodeWithTag("search_empty_state").assertDoesNotExist()
+        composeRule.onNodeWithText("Crompton  Greaves").assertDoesNotExist()
+        composeRule.onNodeWithText("Kirloskar Pump").assertDoesNotExist()
+        composeRule.onNodeWithText("Havells Pending").assertDoesNotExist()
+        composeRule.onNodeWithText("LG Rejected").assertDoesNotExist()
+
+        // Toggle Filters -> expands panel & updates indicator; tapping again collapses & hides all filter fields
+        composeRule.onNodeWithTag("toggle_filters_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("toggle_filters_button").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded")
+        )
+        composeRule.onNodeWithTag("advanced_filter_panel").assertIsDisplayed()
+        composeRule.onNodeWithTag("filter_type_three").assertIsDisplayed()
+        composeRule.onNodeWithTag("clear_filters_button").performScrollTo().assertIsDisplayed()
+
+        composeRule.onNodeWithTag("toggle_filters_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("toggle_filters_button").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed")
+        )
+        composeRule.onNodeWithTag("advanced_filter_panel").assertDoesNotExist()
+
+        // 2. Empty search shows validation message and does NOT show all motor records
+        composeRule.onNodeWithTag("search_submit_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Please enter a search keyword or select at least one filter.").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_results_count").assertDoesNotExist()
+        composeRule.onNodeWithText("Crompton  Greaves").assertDoesNotExist()
+
+        // 3. Typing keyword alone does NOT reveal results until Search is pressed
+        composeRule.onNodeWithTag("advanced_search_input").performTextInput("crompton")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("search_results_count").assertDoesNotExist()
+        composeRule.onNodeWithText("Crompton  Greaves").assertDoesNotExist()
+
+        // Press Search -> displays matching approved record only, hides pending/rejected/private data
+        composeRule.onNodeWithTag("search_submit_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("1 Match").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_results_list")
+            .performScrollToNode(hasTestTag("search_result_card_single_sp_1"))
+        composeRule.onNodeWithTag("search_result_card_single_sp_1").assertIsDisplayed()
         composeRule.onNodeWithText("Havells Pending").assertDoesNotExist()
         composeRule.onNodeWithText("LG Rejected").assertDoesNotExist()
         composeRule.onNodeWithText("PrivateAdminName").assertDoesNotExist()
-        composeRule.onNodeWithTag("search_results_list")
-            .performScrollToNode(hasTestTag("load_more_search_button"))
-        composeRule.onNodeWithTag("load_more_search_button").assertIsDisplayed()
 
-        // Open Filters panel -> Approval Status filter must NOT exist for public users
+        // 4. Clear Search clears keyword & filters, hides results, and returns to collapsed initial screen
+        composeRule.onNodeWithTag("clear_search_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("search_results_count").assertDoesNotExist()
+        composeRule.onNodeWithTag("search_result_card_single_sp_1").assertDoesNotExist()
+        composeRule.onNodeWithTag("sort_hp").assertDoesNotExist()
+        composeRule.onNodeWithTag("advanced_filter_panel").assertDoesNotExist()
+
+        // 5. Expand Filters -> select multiple filters simultaneously (Three Phase + Connection Delta) -> Search
         composeRule.onNodeWithTag("toggle_filters_button").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("advanced_filter_panel").assertIsDisplayed()
-        composeRule.onNodeWithTag("filter_status_pending").assertDoesNotExist()
-
-        // Apply Three Phase + Connection Delta
         composeRule.onNodeWithTag("filter_type_three").performClick()
         composeRule.onNodeWithTag("filter_connection_delta").performScrollTo().performClick()
         composeRule.onNodeWithTag("apply_filters_button").performScrollTo().performClick()
         composeRule.waitForIdle()
-
         composeRule.onNodeWithText("1 Match").assertIsDisplayed()
         composeRule.onNodeWithTag("search_results_list")
             .performScrollToNode(hasTestTag("search_result_card_three_tp_1"))
         composeRule.onNodeWithTag("search_result_card_three_tp_1").assertIsDisplayed()
 
-        // Clear All restores all 6 approved results
-        composeRule.onNodeWithTag("quick_clear_filters_button").performClick()
+        // 6. Search producing zero matches shows exact empty message
+        composeRule.onNodeWithTag("clear_search_button").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("6 Matches").assertIsDisplayed()
-
-        // Query producing empty results shows friendly empty state
         composeRule.onNodeWithTag("advanced_search_input").performTextInput("NonExistentMotorBrand999")
+        composeRule.onNodeWithTag("search_submit_button").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithText("0 Matches").assertIsDisplayed()
         composeRule.onNodeWithTag("search_results_list")
             .performScrollToNode(hasTestTag("search_empty_state"))
-        composeRule.onNodeWithTag("search_empty_state").assertIsDisplayed()
+        composeRule.onNodeWithText("No matching motor data found.").assertIsDisplayed()
     }
 
     @Test
-    fun adminAdvancedSearchScreen_showsAllStatusesAndApprovalFilterAndActions() {
+    fun adminAdvancedSearchScreen_startsEmpty_supportsApprovalFilterAndActionsAfterSearch() {
         val viewModel = MotorViewModel()
         viewModel.seedSearchDataForTest(
             singlePhaseMotors = sampleSinglePhaseMotors(),
@@ -418,13 +482,20 @@ class AdvancedSearchWorkflowTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("8 Matches").assertIsDisplayed()
-        composeRule.onNodeWithTag("search_results_list")
-            .performScrollToNode(hasTestTag("search_result_card_single_sp_pending"))
-        composeRule.onNodeWithTag("search_result_status_single_sp_pending", useUnmergedTree = true)
-            .assertExists()
+        // Initially no motor records and no filter fields shown even for Admin
+        composeRule.onNodeWithTag("search_submit_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("toggle_filters_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("advanced_filter_panel").assertDoesNotExist()
+        composeRule.onNodeWithTag("search_results_count").assertDoesNotExist()
+        composeRule.onNodeWithText("Havells Pending").assertDoesNotExist()
 
-        // Open Filters to filter by Pending status
+        // Empty search triggers validation message for Admin too
+        composeRule.onNodeWithTag("search_submit_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Please enter a search keyword or select at least one filter.").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_results_count").assertDoesNotExist()
+
+        // Expand Filters -> select Pending status filter (Admin-only) -> Search
         composeRule.onNodeWithTag("toggle_filters_button").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("filter_status_pending").performScrollTo().performClick()
@@ -435,12 +506,23 @@ class AdvancedSearchWorkflowTest {
         composeRule.onNodeWithTag("search_results_list")
             .performScrollToNode(hasTestTag("search_result_card_single_sp_pending"))
         composeRule.onNodeWithTag("search_result_card_single_sp_pending").assertIsDisplayed()
+        composeRule.onNodeWithTag("search_result_status_single_sp_pending", useUnmergedTree = true)
+            .assertExists()
+
+        // Expand Filters -> Clear Filters clears status filter & results cleanly
+        composeRule.onNodeWithTag("toggle_filters_button").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("clear_filters_button").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("search_results_count").assertDoesNotExist()
+        composeRule.onNodeWithTag("search_result_card_single_sp_pending").assertDoesNotExist()
+        composeRule.onNodeWithTag("advanced_filter_panel").assertIsDisplayed()
     }
 
     @Test
     fun searchScreen_displaysErrorStateWhenRepositoryFails() {
         val viewModel = MotorViewModel()
-        viewModel.setSearchErrorForTest("Network unavailable")
+        viewModel.setSearchErrorForTest("Network unavailable", isAdmin = false, executedSearch = true)
 
         composeRule.setContent {
             MyApplicationTheme {
@@ -461,7 +543,7 @@ class AdvancedSearchWorkflowTest {
     }
 
     @Test
-    fun searchScreen_supportsNumericExactRangeInputsAndSorting() {
+    fun searchScreen_supportsNumericHpRpmFiltersAndSortingAfterSearch() {
         val viewModel = MotorViewModel()
         viewModel.seedSearchDataForTest(
             singlePhaseMotors = sampleSinglePhaseMotors(),
@@ -482,14 +564,7 @@ class AdvancedSearchWorkflowTest {
         }
         composeRule.waitForIdle()
 
-        // Sort by HP and RPM chips work cleanly without crashing on legacy empty fields
-        composeRule.onNodeWithTag("sort_hp").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("sort_rpm").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("6 Matches").assertIsDisplayed()
-
-        // Expand Filters -> use HP Range (1..5) + RPM Exact (1440)
+        // Expand Filters -> select HP Range (1..5) + RPM Exact (1440) -> Search
         composeRule.onNodeWithTag("toggle_filters_button").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("hp_mode_range").performScrollTo().performClick()
@@ -504,5 +579,12 @@ class AdvancedSearchWorkflowTest {
         composeRule.onNodeWithTag("search_results_list")
             .performScrollToNode(hasTestTag("search_result_card_three_tp_1"))
         composeRule.onNodeWithTag("search_result_card_three_tp_1").assertIsDisplayed()
+
+        // Sort chips work cleanly after search has been executed
+        composeRule.onNodeWithTag("sort_hp").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("sort_rpm").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("1 Match").assertIsDisplayed()
     }
 }

@@ -35,12 +35,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.example.model.NotificationCounter
+import com.example.ui.components.LogoutConfirmationDialog
 import com.example.viewmodel.AuthViewModel
 import com.example.viewmodel.MotorViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewModel, motorViewModel: MotorViewModel) {
+fun AdminDashboardScreen(
+    navController: NavController,
+    authViewModel: AuthViewModel,
+    motorViewModel: MotorViewModel,
+    onOpenDrawer: () -> Unit = {},
+    onRequestLogout: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
@@ -63,6 +71,21 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
     val totalUnseenCount = unseenPendingMotorsCount + unseenPendingUsersCount
     val hasUnreadNotifications = totalUnseenCount > 0
     var showNotificationsDialog by remember { mutableStateOf(false) }
+    var showLocalLogoutDialog by remember { mutableStateOf(false) }
+
+    if (showLocalLogoutDialog) {
+        LogoutConfirmationDialog(
+            isAdmin = true,
+            onConfirm = {
+                showLocalLogoutDialog = false
+                Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
+                authViewModel.logout()
+                motorViewModel.clearData()
+                navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
+            },
+            onDismiss = { showLocalLogoutDialog = false }
+        )
+    }
     
     LaunchedEffect(currentUser) {
         motorViewModel.loadData(isAdmin = true, userId = currentUser?.id)
@@ -164,8 +187,16 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showNotificationsDialog = false }) {
-                    Text("Close")
+                Row {
+                    TextButton(onClick = {
+                        showNotificationsDialog = false
+                        navController.navigate("notifications")
+                    }) {
+                        Text("View All")
+                    }
+                    TextButton(onClick = { showNotificationsDialog = false }) {
+                        Text("Close")
+                    }
                 }
             }
         )
@@ -174,6 +205,20 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(
+                        onClick = onOpenDrawer,
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag("drawer_menu_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Menu,
+                            contentDescription = "Open Navigation Menu",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                },
                 title = { 
                     Column {
                         Text("Admin Dashboard", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -286,7 +331,10 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
                     icon = Icons.Rounded.ManageSearch,
                     accentColor = Color(0xFF06B6D4),
                     modifier = Modifier.testTag("admin_advanced_search_card")
-                ) { navController.navigate("advanced_search") }
+                ) {
+                    motorViewModel.resetSearchSession()
+                    navController.navigate("advanced_search")
+                }
 
                 PremiumActionCard(
                     title = "Pending Approval",
@@ -347,12 +395,16 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
             
             OutlinedButton(
                 onClick = {
-                    Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
-                    authViewModel.logout()
-                    motorViewModel.clearData()
-                    navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
+                    if (onRequestLogout != null) {
+                        onRequestLogout()
+                    } else {
+                        showLocalLogoutDialog = true
+                    }
                 },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .testTag("admin_logout_button"),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
             ) {
@@ -368,11 +420,19 @@ fun AdminDashboardScreen(navController: NavController, authViewModel: AuthViewMo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewModel, motorViewModel: MotorViewModel) {
+fun UserDashboardScreen(
+    navController: NavController,
+    authViewModel: AuthViewModel,
+    motorViewModel: MotorViewModel,
+    onOpenDrawer: () -> Unit = {},
+    onRequestLogout: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     val currentUser by authViewModel.currentUser.collectAsState()
     val singlePhaseMotors by motorViewModel.singlePhaseMotors.collectAsState()
     val threePhaseMotors by motorViewModel.threePhaseMotors.collectAsState()
+    val seenPublicKeys by authViewModel.seenPublicNotificationKeys.collectAsState()
+    var showLocalLogoutDialog by remember { mutableStateOf(false) }
 
     if (currentUser == null) {
         LaunchedEffect(Unit) {
@@ -381,17 +441,52 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
         return
     }
 
+    if (showLocalLogoutDialog) {
+        LogoutConfirmationDialog(
+            isAdmin = false,
+            onConfirm = {
+                showLocalLogoutDialog = false
+                Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
+                authViewModel.logout()
+                motorViewModel.clearData()
+                navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
+            },
+            onDismiss = { showLocalLogoutDialog = false }
+        )
+    }
+
     val uid = currentUser?.id ?: ""
     val mySubmissionsCount = singlePhaseMotors.count { it.createdBy == uid } + threePhaseMotors.count { it.createdBy == uid }
     val approvedMotorsCount = singlePhaseMotors.count { it.isExplicitlyApproved() } + threePhaseMotors.count { it.isExplicitlyApproved() }
+    val unreadNotificationsCount = NotificationCounter.countPublicUnread(
+        userId = uid,
+        singlePhaseMotors = singlePhaseMotors,
+        threePhaseMotors = threePhaseMotors,
+        seenKeys = seenPublicKeys
+    )
 
     LaunchedEffect(currentUser) {
+        authViewModel.syncNotificationPreferences(context)
         motorViewModel.loadData(isAdmin = false, userId = currentUser?.id)
     }
     
     Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(
+                        onClick = onOpenDrawer,
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag("drawer_menu_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Menu,
+                            contentDescription = "Open Navigation Menu",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                },
                 title = { 
                     Column {
                         Text("Welcome", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -403,13 +498,29 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                     titleContentColor = MaterialTheme.colorScheme.onBackground
                 ),
                 actions = {
-                    IconButton(onClick = {
-                        Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
-                        authViewModel.logout()
-                        motorViewModel.clearData()
-                        navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
-                    }) {
-                        Icon(Icons.AutoMirrored.Rounded.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.error)
+                    Box(modifier = Modifier.padding(end = 4.dp)) {
+                        IconButton(
+                            onClick = { navController.navigate("notifications") },
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                .testTag("public_notifications_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Notifications,
+                                contentDescription = "Notifications",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        if (unreadNotificationsCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = (-6).dp, y = 6.dp)
+                                    .size(10.dp)
+                                    .background(MaterialTheme.colorScheme.error, CircleShape)
+                                    .testTag("public_notification_unread_dot")
+                            )
+                        }
                     }
                 }
             )
@@ -432,7 +543,10 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
                     icon = Icons.Rounded.ManageSearch,
                     accentColor = Color(0xFF06B6D4),
                     modifier = Modifier.testTag("public_advanced_search_card")
-                ) { navController.navigate("advanced_search") }
+                ) {
+                    motorViewModel.resetSearchSession()
+                    navController.navigate("advanced_search")
+                }
 
                 PremiumActionCard(
                     title = "Approved Motors",
@@ -492,12 +606,16 @@ fun UserDashboardScreen(navController: NavController, authViewModel: AuthViewMod
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(
                 onClick = {
-                    Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
-                    authViewModel.logout()
-                    motorViewModel.clearData()
-                    navController.navigate("public_login") { popUpTo(0) { inclusive = true } }
+                    if (onRequestLogout != null) {
+                        onRequestLogout()
+                    } else {
+                        showLocalLogoutDialog = true
+                    }
                 },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .testTag("public_logout_button"),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
             ) {

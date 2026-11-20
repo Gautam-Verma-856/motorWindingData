@@ -255,7 +255,7 @@ fun AdvancedFilterPanel(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
-            // Apply Filters & Clear All
+            // Search & Clear Search
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -270,7 +270,7 @@ fun AdvancedFilterPanel(
                 ) {
                     Icon(Icons.Rounded.RestartAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Clear All", fontWeight = FontWeight.SemiBold)
+                    Text("Clear Filters", fontWeight = FontWeight.SemiBold)
                 }
                 Button(
                     onClick = onApplyFilters,
@@ -280,9 +280,9 @@ fun AdvancedFilterPanel(
                         .testTag("apply_filters_button"),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Icon(Icons.Rounded.FilterAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Apply Filters", fontWeight = FontWeight.Bold)
+                    Text("Search", fontWeight = FontWeight.Bold)
                 }
             }
         }

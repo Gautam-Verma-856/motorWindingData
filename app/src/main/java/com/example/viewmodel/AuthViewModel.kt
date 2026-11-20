@@ -1,7 +1,10 @@
 package com.example.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.model.NotificationPreferences
+import com.example.model.NotificationSettings
 import com.example.model.User
 import com.example.repository.AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +41,13 @@ sealed class PasswordResetState {
     data class Error(val message: String) : PasswordResetState()
 }
 
+sealed class ProfileUpdateState {
+    object Idle : ProfileUpdateState()
+    object Loading : ProfileUpdateState()
+    data class Success(val message: String) : ProfileUpdateState()
+    data class Error(val message: String) : ProfileUpdateState()
+}
+
 class AuthViewModel : ViewModel() {
     private val repo = AuthRepository()
 
@@ -67,6 +77,15 @@ class AuthViewModel : ViewModel() {
 
     private val _passwordResetState = MutableStateFlow<PasswordResetState>(PasswordResetState.Idle)
     val passwordResetState = _passwordResetState.asStateFlow()
+
+    private val _profileUpdateState = MutableStateFlow<ProfileUpdateState>(ProfileUpdateState.Idle)
+    val profileUpdateState = _profileUpdateState.asStateFlow()
+
+    private val _notificationSettings = MutableStateFlow(NotificationSettings())
+    val notificationSettings = _notificationSettings.asStateFlow()
+
+    private val _seenPublicNotificationKeys = MutableStateFlow<Set<String>>(emptySet())
+    val seenPublicNotificationKeys = _seenPublicNotificationKeys.asStateFlow()
 
     init {
         checkSession()
@@ -201,9 +220,11 @@ class AuthViewModel : ViewModel() {
         _currentUser.value = null
         _authState.value = AuthState.Idle
         _usersList.value = emptyList()
+        _seenPublicNotificationKeys.value = emptySet()
         resetEmailVerificationState()
         resetChangePasswordState()
         resetPasswordResetState()
+        resetProfileUpdateState()
     }
     
     fun fetchUsers() {
@@ -327,5 +348,70 @@ class AuthViewModel : ViewModel() {
 
     fun resetPasswordResetState() {
         _passwordResetState.value = PasswordResetState.Idle
+    }
+
+    fun updateUserProfile(name: String, mobile: String, photoUrl: String) {
+        val trimmedName = name.trim()
+        if (trimmedName.isEmpty()) {
+            _profileUpdateState.value = ProfileUpdateState.Error("Full name cannot be empty.")
+            return
+        }
+        val trimmedMobile = mobile.trim()
+        val formattedMobile = if (trimmedMobile.isNotEmpty()) {
+            formatIndianPhoneNumber(trimmedMobile) ?: trimmedMobile
+        } else {
+            ""
+        }
+
+        _profileUpdateState.value = ProfileUpdateState.Loading
+        viewModelScope.launch {
+            val res = repo.updateUserProfile(trimmedName, formattedMobile, photoUrl.trim())
+            res.onSuccess { updatedUser ->
+                _currentUser.value = updatedUser
+                _profileUpdateState.value = ProfileUpdateState.Success("Profile updated successfully.")
+            }
+            res.onFailure {
+                _profileUpdateState.value = ProfileUpdateState.Error(
+                    it.message ?: "Failed to update profile."
+                )
+            }
+        }
+    }
+
+    fun resetProfileUpdateState() {
+        _profileUpdateState.value = ProfileUpdateState.Idle
+    }
+
+    fun syncNotificationPreferences(context: Context) {
+        _notificationSettings.value = NotificationPreferences.loadSettings(context)
+        val uid = _currentUser.value?.id.orEmpty()
+        if (uid.isNotBlank()) {
+            _seenPublicNotificationKeys.value = NotificationPreferences.loadSeenPublicKeys(context, uid)
+        }
+    }
+
+    fun updateNotificationSettings(context: Context, settings: NotificationSettings) {
+        _notificationSettings.value = settings
+        NotificationPreferences.saveSettings(context, settings)
+    }
+
+    fun markPublicNotificationSeen(context: Context, key: String) {
+        val uid = _currentUser.value?.id.orEmpty()
+        if (key.isBlank()) return
+        val updated = _seenPublicNotificationKeys.value + key
+        _seenPublicNotificationKeys.value = updated
+        if (uid.isNotBlank()) {
+            NotificationPreferences.saveSeenPublicKeys(context, uid, updated)
+        }
+    }
+
+    fun markAllPublicNotificationsSeen(context: Context, keys: Collection<String>) {
+        val uid = _currentUser.value?.id.orEmpty()
+        if (keys.isEmpty()) return
+        val updated = _seenPublicNotificationKeys.value + keys
+        _seenPublicNotificationKeys.value = updated
+        if (uid.isNotBlank()) {
+            NotificationPreferences.saveSeenPublicKeys(context, uid, updated)
+        }
     }
 }

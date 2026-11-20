@@ -15,12 +15,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,7 +79,9 @@ fun HomeScreen(
     navController: NavController,
     currentUser: User?,
     motorViewModel: com.example.viewmodel.MotorViewModel? = null,
-    onLogout: () -> Unit
+    unreadNotificationsCount: Int = 0,
+    onOpenDrawer: () -> Unit = {},
+    onLogout: () -> Unit = {}
 ) {
     if (currentUser == null) {
         LaunchedEffect(Unit) {
@@ -94,17 +95,13 @@ fun HomeScreen(
     val isAdmin = currentUser.role.trim().equals("admin", ignoreCase = true)
     var headerVisible by remember { mutableStateOf(false) }
     var cardsVisible by remember { mutableStateOf(false) }
-    var loginVisible by remember { mutableStateOf(false) }
     var contactVisible by remember { mutableStateOf(false) }
-    val context = LocalContext.current
 
     LaunchedEffect(currentUser) {
         motorViewModel?.loadData(isAdmin = isAdmin, userId = currentUser.id)
         headerVisible = true
         delay(100)
         cardsVisible = true
-        delay(100)
-        loginVisible = true
         delay(100)
         contactVisible = true
     }
@@ -119,9 +116,23 @@ fun HomeScreen(
                     enter = fadeIn() + slideInVertically(initialOffsetY = { -50 })
                 ) {
                     TopAppBar(
+                        navigationIcon = {
+                            IconButton(
+                                onClick = onOpenDrawer,
+                                modifier = Modifier
+                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                    .testTag("drawer_menu_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Menu,
+                                    contentDescription = "Open Navigation Menu",
+                                    tint = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
+                        },
                         title = { 
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Settings, contentDescription = "Logo", tint = MaterialTheme.colorScheme.primary)
+                                Icon(Icons.Rounded.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Motor Winding Data", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                             }
@@ -130,74 +141,33 @@ fun HomeScreen(
                             containerColor = Color.Transparent,
                             titleContentColor = MaterialTheme.colorScheme.onBackground
                         ),
-                    actions = {
-                        var menuExpanded by remember { mutableStateOf(false) }
-                        
-                        IconButton(onClick = onLogout) {
-                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.error)
-                        }
-                        
-                        IconButton(onClick = { menuExpanded = true }) {
-                            Icon(Icons.Rounded.Menu, contentDescription = "Menu")
-                        }
-                        
-                        MaterialTheme(shapes = MaterialTheme.shapes.copy(extraSmall = RoundedCornerShape(16.dp))) {
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false },
-                                modifier = Modifier.background(MaterialTheme.colorScheme.surface).width(220.dp)
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Home", fontWeight = FontWeight.Bold) },
-                                    onClick = { menuExpanded = false },
-                                    leadingIcon = { Icon(Icons.Rounded.Home, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Single Phase Motor") },
-                                    onClick = { menuExpanded = false; navController.navigate("motor_list/single") },
-                                    leadingIcon = { Icon(Icons.Rounded.FlashOn, contentDescription = null, tint = Color(0xFFF59E0B)) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("3 Phase Motor") },
-                                    onClick = { menuExpanded = false; navController.navigate("motor_list/three") },
-                                    leadingIcon = { Icon(Icons.Rounded.Build, contentDescription = null, tint = Color(0xFF10B981)) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Contact Details") },
-                                    onClick = { menuExpanded = false; navController.navigate("contact") },
-                                    leadingIcon = { Icon(Icons.Rounded.Phone, contentDescription = null, tint = Color(0xFF25D366)) }
-                                )
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                                DropdownMenuItem(
-                                    text = { Text(if (isAdmin) "Admin Dashboard" else "My Dashboard") },
-                                    onClick = { 
-                                        menuExpanded = false
-                                        if (isAdmin) navController.navigate("admin_dashboard")
-                                        else navController.navigate("user_dashboard") 
-                                    },
-                                    leadingIcon = { Icon(if (isAdmin) Icons.Rounded.AdminPanelSettings else Icons.Rounded.Dashboard, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-                                )
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                                Column(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                        actions = {
+                            Box(modifier = Modifier.padding(end = 4.dp)) {
+                                IconButton(
+                                    onClick = { navController.navigate("notifications") },
+                                    modifier = Modifier
+                                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                        .testTag("home_notifications_button")
                                 ) {
-                                    Text(
-                                        text = "App Version",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Icon(
+                                        imageVector = Icons.Rounded.Notifications,
+                                        contentDescription = "Notifications",
+                                        tint = MaterialTheme.colorScheme.onBackground
                                     )
-                                    Text(
-                                        text = com.example.BuildConfig.VERSION_NAME,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        fontWeight = FontWeight.Bold
+                                }
+                                if (unreadNotificationsCount > 0) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = (-6).dp, y = 6.dp)
+                                            .size(10.dp)
+                                            .background(MaterialTheme.colorScheme.error, CircleShape)
+                                            .testTag("home_notification_unread_dot")
                                     )
                                 }
                             }
                         }
-                    }
-                )
+                    )
             }
         }
     ) { padding ->
@@ -249,49 +219,6 @@ fun HomeScreen(
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // PUBLIC LOGIN SECTION (COMPACT PILL BUTTON)
-            AnimatedVisibility(
-                visible = loginVisible,
-                enter = fadeIn() + slideInVertically(initialOffsetY = { 50 })
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    val interactionSource = remember { MutableInteractionSource() }
-                    val isPressed by interactionSource.collectIsPressedAsState()
-                    val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
-
-                    FilledTonalButton(
-                        onClick = {
-                            if (isAdmin) navController.navigate("admin_dashboard")
-                            else navController.navigate("user_dashboard")
-                        },
-                        shape = RoundedCornerShape(50),
-                        interactionSource = interactionSource,
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
-                        modifier = Modifier
-                            .scale(scale)
-                            .height(48.dp)
-                            .widthIn(min = 200.dp),
-                        elevation = ButtonDefaults.filledTonalButtonElevation(defaultElevation = 2.dp)
-                    ) {
-                        Icon(if (isAdmin) Icons.Rounded.AdminPanelSettings else Icons.Rounded.Dashboard, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(if (isAdmin) "Go to Admin Dashboard" else "Go to Dashboard", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
 
             Spacer(modifier = Modifier.weight(1f, fill = false))
 

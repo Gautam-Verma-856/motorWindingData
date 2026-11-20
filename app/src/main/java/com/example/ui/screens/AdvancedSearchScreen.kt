@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,9 +27,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -66,6 +71,8 @@ fun AdvancedSearchScreen(
     val searchError by motorViewModel.searchError.collectAsState()
     val hasMore by motorViewModel.hasMoreSearchResults.collectAsState()
     val loadedCount by motorViewModel.loadedSearchCount.collectAsState()
+    val hasExecutedSearch by motorViewModel.hasExecutedSearch.collectAsState()
+    val searchValidationMessage by motorViewModel.searchValidationMessage.collectAsState()
     val uiState by motorViewModel.uiState.collectAsState()
 
     var isFilterPanelExpanded by remember { mutableStateOf(false) }
@@ -134,11 +141,37 @@ fun AdvancedSearchScreen(
         )
     }
 
-    val activeFilterCount = remember(appliedFilter, isAdmin) {
+    val appliedFilterCount = remember(appliedFilter, isAdmin) {
         appliedFilter.activeCriteriaCount(isAdmin)
+    }
+    val draftFilterCount = remember(draftFilter, isAdmin) {
+        draftFilter.activeCriteriaCount(isAdmin)
     }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+
+    val performSearch: () -> Unit = {
+        focusManager.clearFocus()
+        val hasCriteria = draftFilter.hasAnyActiveFilter(isAdmin)
+        motorViewModel.executeSearch(isAdmin)
+        if (hasCriteria) {
+            isFilterPanelExpanded = false
+        }
+        coroutineScope.launch { listState.scrollToItem(0) }
+    }
+
+    val performClearFilters: () -> Unit = {
+        focusManager.clearFocus()
+        motorViewModel.clearSearch()
+        coroutineScope.launch { listState.scrollToItem(0) }
+    }
+
+    val performClearSearch: () -> Unit = {
+        focusManager.clearFocus()
+        motorViewModel.clearSearch()
+        isFilterPanelExpanded = false
+        coroutineScope.launch { listState.scrollToItem(0) }
+    }
 
     Scaffold(
         topBar = {
@@ -163,11 +196,13 @@ fun AdvancedSearchScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { motorViewModel.refreshSearch(isAdmin) },
-                        modifier = Modifier.testTag("refresh_search_button")
-                    ) {
-                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Search")
+                    if (hasExecutedSearch) {
+                        IconButton(
+                            onClick = { motorViewModel.refreshSearch(isAdmin) },
+                            modifier = Modifier.testTag("refresh_search_button")
+                        ) {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh Search")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -189,7 +224,7 @@ fun AdvancedSearchScreen(
                     .fillMaxSize()
                     .widthIn(max = 840.dp)
             ) {
-                // Pinned Fast Search Bar + Filter Toggle + Match Count
+                // Pinned Search Input + Action Buttons + Match Count (when searched)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -202,7 +237,7 @@ fun AdvancedSearchScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("advanced_search_input"),
-                        placeholder = { Text("Search company or motor name...") },
+                        placeholder = { Text("Search company, motor name, or keyword...") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         trailingIcon = {
                             if (draftFilter.query.isNotEmpty()) {
@@ -210,17 +245,14 @@ fun AdvancedSearchScreen(
                                     onClick = { motorViewModel.updateSearchQuery("") },
                                     modifier = Modifier.testTag("clear_query_button")
                                 ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear search")
+                                    Icon(Icons.Default.Close, contentDescription = "Clear keyword")
                                 }
                             }
                         },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(
-                            onSearch = {
-                                motorViewModel.applyFilters()
-                                focusManager.clearFocus()
-                            }
+                            onSearch = { performSearch() }
                         ),
                         shape = RoundedCornerShape(16.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -241,6 +273,34 @@ fun AdvancedSearchScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            Button(
+                                onClick = { performSearch() },
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("search_submit_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Search",
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+
+                            val indicatorRotation by animateFloatAsState(
+                                targetValue = if (isFilterPanelExpanded) 180f else 0f,
+                                animationSpec = tween(durationMillis = 220),
+                                label = "filter_chevron_rotation"
+                            )
+
                             FilledTonalButton(
                                 onClick = {
                                     val next = !isFilterPanelExpanded
@@ -251,30 +311,42 @@ fun AdvancedSearchScreen(
                                 },
                                 shape = RoundedCornerShape(14.dp),
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                                colors = if (isFilterPanelExpanded) {
+                                    ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                } else {
+                                    ButtonDefaults.filledTonalButtonColors()
+                                },
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
+                                    .semantics {
+                                        stateDescription = if (isFilterPanelExpanded) "Expanded" else "Collapsed"
+                                    }
                                     .testTag("toggle_filters_button")
                             ) {
                                 Icon(
-                                    imageVector = if (isFilterPanelExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.Tune,
+                                    imageVector = Icons.Rounded.FilterList,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (isFilterPanelExpanded) "Hide Filters" else "Filters",
+                                    text = "Filters",
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     softWrap = false
                                 )
-                                if (activeFilterCount > 0) {
+                                val badgeCount = if (hasExecutedSearch) appliedFilterCount else draftFilterCount
+                                if (badgeCount > 0) {
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Surface(
                                         shape = CircleShape,
                                         color = MaterialTheme.colorScheme.primary
                                     ) {
                                         Text(
-                                            text = activeFilterCount.toString(),
+                                            text = badgeCount.toString(),
                                             color = MaterialTheme.colorScheme.onPrimary,
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
@@ -282,21 +354,30 @@ fun AdvancedSearchScreen(
                                         )
                                     }
                                 }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                                    contentDescription = if (isFilterPanelExpanded) "Filters expanded" else "Filters collapsed",
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .rotate(indicatorRotation)
+                                        .testTag("filters_state_indicator")
+                                )
                             }
 
-                            if (appliedFilter.hasAnyActiveFilter(isAdmin) || draftFilter != MotorSearchFilter()) {
+                            if (hasExecutedSearch || searchValidationMessage != null) {
                                 OutlinedButton(
-                                    onClick = { motorViewModel.clearAllFilters() },
+                                    onClick = { performClearSearch() },
                                     shape = RoundedCornerShape(14.dp),
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                                     modifier = Modifier
                                         .heightIn(min = 48.dp)
-                                        .testTag("quick_clear_filters_button")
+                                        .testTag("clear_search_button")
                                 ) {
                                     Icon(Icons.Rounded.ClearAll, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "Clear All",
+                                        text = "Clear Search",
                                         fontWeight = FontWeight.Medium,
                                         maxLines = 1,
                                         softWrap = false
@@ -305,22 +386,62 @@ fun AdvancedSearchScreen(
                             }
                         }
 
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
-                        ) {
-                            Text(
-                                text = "${results.size} ${if (results.size == 1) "Match" else "Matches"}",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                maxLines = 1,
-                                softWrap = false,
-                                modifier = Modifier
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                                    .testTag("search_results_count")
-                            )
+                        if (hasExecutedSearch && !isLoading && searchError == null) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+                            ) {
+                                Text(
+                                    text = "${results.size} ${if (results.size == 1) "Match" else "Matches"}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        .testTag("search_results_count")
+                                )
+                            }
                         }
+                    }
+
+                    searchValidationMessage?.let { msg ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("search_validation_message")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Info,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = msg,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
+
+                    if (hasExecutedSearch && (isLoading || isLoadingMore)) {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("search_loading_indicator")
+                        )
                     }
                 }
 
@@ -333,178 +454,173 @@ fun AdvancedSearchScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Expandable Advanced Filter Panel
+                    // Available Search Filters Panel (Collapsed by default)
                     item(key = "filter_panel") {
                         AnimatedVisibility(
                             visible = isFilterPanelExpanded,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
+                            enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+                                expandVertically(animationSpec = tween(durationMillis = 260)),
+                            exit = fadeOut(animationSpec = tween(durationMillis = 180)) +
+                                shrinkVertically(animationSpec = tween(durationMillis = 220))
                         ) {
                             AdvancedFilterPanel(
                                 draftFilter = draftFilter,
                                 isAdmin = isAdmin,
                                 onUpdateFilter = { motorViewModel.updateDraftFilter(it) },
-                                onApplyFilters = {
-                                    motorViewModel.applyFilters()
-                                    focusManager.clearFocus()
-                                    isFilterPanelExpanded = false
-                                    coroutineScope.launch { listState.scrollToItem(0) }
-                                },
-                                onClearAll = {
-                                    motorViewModel.clearAllFilters()
-                                    focusManager.clearFocus()
-                                    coroutineScope.launch { listState.scrollToItem(0) }
-                                }
+                                onApplyFilters = { performSearch() },
+                                onClearAll = { performClearFilters() }
                             )
                         }
                     }
 
-                // Active Filter Chips Summary
-                if (activeFilterCount > 0) {
-                    item(key = "active_filter_summary") {
-                        ActiveFilterSummaryRow(
-                            filter = appliedFilter,
-                            isAdmin = isAdmin
-                        )
-                    }
-                }
-
-                // Sort Options Bar
-                item(key = "sort_bar") {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Sort By",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (loadedCount > 0) {
-                                Text(
-                                    text = "Loaded $loadedCount records" + if (hasMore) " (more available)" else "",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    // Search Results Section: COMPLETELY HIDDEN until user performs a valid search
+                    if (hasExecutedSearch) {
+                        if (appliedFilterCount > 0) {
+                            item(key = "active_filter_summary") {
+                                ActiveFilterSummaryRow(
+                                    filter = appliedFilter,
+                                    isAdmin = isAdmin
                                 )
                             }
                         }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            SearchSortOption.entries.forEach { sortOpt ->
-                                val tag = when (sortOpt) {
-                                    SearchSortOption.RECENTLY_ADDED -> "sort_recently_added"
-                                    SearchSortOption.COMPANY_NAME -> "sort_company_name"
-                                    SearchSortOption.HP -> "sort_hp"
-                                    SearchSortOption.RPM -> "sort_rpm"
-                                }
-                                FilterChip(
-                                    selected = appliedFilter.sortBy == sortOpt,
-                                    onClick = { motorViewModel.updateSortOption(sortOpt) },
-                                    label = {
+
+                        // Sort Options Bar
+                        item(key = "sort_bar") {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Sort By",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (loadedCount > 0) {
                                         Text(
-                                            text = sortOpt.label,
-                                            fontWeight = if (appliedFilter.sortBy == sortOpt) FontWeight.Bold else FontWeight.Normal
+                                            text = "Loaded $loadedCount records" + if (hasMore) " (more available)" else "",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                    },
-                                    leadingIcon = if (appliedFilter.sortBy == sortOpt) {
-                                        { Icon(Icons.Rounded.SwapVert, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null,
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.testTag(tag)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Body States: Loading / Error / Empty / Results
-                if (isLoading && results.isEmpty()) {
-                    item(key = "loading_state") {
-                        SearchLoadingSkeletonList()
-                    }
-                } else if (searchError != null && results.isEmpty()) {
-                    item(key = "error_state") {
-                        SearchErrorCard(
-                            message = searchError ?: "Unable to load search results.",
-                            onRetry = { motorViewModel.refreshSearch(isAdmin) }
-                        )
-                    }
-                } else if (results.isEmpty()) {
-                    item(key = "empty_state") {
-                        SearchEmptyResultsCard(
-                            hasActiveFilters = appliedFilter.hasAnyActiveFilter(isAdmin),
-                            hasMore = hasMore,
-                            isLoadingMore = isLoadingMore,
-                            onClearFilters = { motorViewModel.clearAllFilters() },
-                            onLoadMore = { motorViewModel.loadMoreSearchResults() }
-                        )
-                    }
-                } else {
-                    items(results, key = { it.uniqueKey }) { item ->
-                        SearchMotorResultCard(
-                            item = item,
-                            isAdmin = isAdmin,
-                            onView = { navController.navigate("motor_detail/${item.typeKey}/${item.id}") },
-                            onEdit = { navController.navigate("add_edit_motor/${item.typeKey}/${item.id}") },
-                            onDelete = { motorToDelete = item.typeKey to item.id },
-                            onApprove = {
-                                if (item.typeKey == "single") motorViewModel.updateSinglePhaseStatus(item.id, "approved")
-                                else motorViewModel.updateThreePhaseStatus(item.id, "approved")
-                            },
-                            onReject = { motorToReject = item.typeKey to item.id },
-                            onPhotoClick = { urls, idx ->
-                                fullScreenPhotos = urls
-                                fullScreenInitialIndex = idx
-                            }
-                        )
-                    }
-
-                    if (hasMore) {
-                        item(key = "load_more_footer") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                OutlinedButton(
-                                    onClick = { motorViewModel.loadMoreSearchResults() },
-                                    enabled = !isLoadingMore,
-                                    shape = RoundedCornerShape(14.dp),
+                                    }
+                                }
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(min = 48.dp)
-                                        .testTag("load_more_search_button")
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    if (isLoadingMore) {
-                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Loading More...")
-                                    } else {
-                                        Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("Load More Motors", fontWeight = FontWeight.Bold)
+                                    SearchSortOption.entries.forEach { sortOpt ->
+                                        val tag = when (sortOpt) {
+                                            SearchSortOption.RECENTLY_ADDED -> "sort_recently_added"
+                                            SearchSortOption.COMPANY_NAME -> "sort_company_name"
+                                            SearchSortOption.HP -> "sort_hp"
+                                            SearchSortOption.RPM -> "sort_rpm"
+                                        }
+                                        FilterChip(
+                                            selected = appliedFilter.sortBy == sortOpt,
+                                            onClick = { motorViewModel.updateSortOption(sortOpt) },
+                                            label = {
+                                                Text(
+                                                    text = sortOpt.label,
+                                                    fontWeight = if (appliedFilter.sortBy == sortOpt) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            },
+                                            leadingIcon = if (appliedFilter.sortBy == sortOpt) {
+                                                { Icon(Icons.Rounded.SwapVert, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                            } else null,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.testTag(tag)
+                                        )
                                     }
                                 }
                             }
                         }
-                    }
 
-                    item(key = "bottom_spacer") {
-                        Spacer(modifier = Modifier.height(32.dp))
+                        // Body States: Loading / Error / Empty / Results
+                        if (isLoading && results.isEmpty()) {
+                            item(key = "loading_state") {
+                                SearchLoadingSkeletonList()
+                            }
+                        } else if (searchError != null && results.isEmpty()) {
+                            item(key = "error_state") {
+                                SearchErrorCard(
+                                    message = searchError ?: "Unable to load search results.",
+                                    onRetry = { motorViewModel.refreshSearch(isAdmin) }
+                                )
+                            }
+                        } else if (results.isEmpty()) {
+                            item(key = "empty_state") {
+                                SearchEmptyResultsCard(
+                                    hasActiveFilters = appliedFilter.hasAnyActiveFilter(isAdmin),
+                                    hasMore = hasMore,
+                                    isLoadingMore = isLoadingMore,
+                                    onClearFilters = { performClearSearch() },
+                                    onLoadMore = { motorViewModel.loadMoreSearchResults() }
+                                )
+                            }
+                        } else {
+                            items(results, key = { it.uniqueKey }) { item ->
+                                SearchMotorResultCard(
+                                    item = item,
+                                    isAdmin = isAdmin,
+                                    onView = { navController.navigate("motor_detail/${item.typeKey}/${item.id}") },
+                                    onEdit = { navController.navigate("add_edit_motor/${item.typeKey}/${item.id}") },
+                                    onDelete = { motorToDelete = item.typeKey to item.id },
+                                    onApprove = {
+                                        if (item.typeKey == "single") motorViewModel.updateSinglePhaseStatus(item.id, "approved")
+                                        else motorViewModel.updateThreePhaseStatus(item.id, "approved")
+                                    },
+                                    onReject = { motorToReject = item.typeKey to item.id },
+                                    onPhotoClick = { urls, idx ->
+                                        fullScreenPhotos = urls
+                                        fullScreenInitialIndex = idx
+                                    }
+                                )
+                            }
+
+                            if (hasMore) {
+                                item(key = "load_more_footer") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { motorViewModel.loadMoreSearchResults() },
+                                            enabled = !isLoadingMore,
+                                            shape = RoundedCornerShape(14.dp),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(min = 48.dp)
+                                                .testTag("load_more_search_button")
+                                        ) {
+                                            if (isLoadingMore) {
+                                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Loading More...")
+                                            } else {
+                                                Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Load More Motors", fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            item(key = "bottom_spacer") {
+                                Spacer(modifier = Modifier.height(32.dp))
+                            }
+                        }
                     }
                 }
             }
         }
     }
-}
 }
 
 @Composable
@@ -588,7 +704,7 @@ private fun SearchEmptyResultsCard(
                 )
             }
             Text(
-                text = "No matching motors found",
+                text = "No matching motor data found.",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
@@ -612,7 +728,7 @@ private fun SearchEmptyResultsCard(
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
-                        Text("Clear Filters", fontWeight = FontWeight.Bold)
+                        Text("Clear Search", fontWeight = FontWeight.Bold)
                     }
                 }
                 if (hasMore) {
