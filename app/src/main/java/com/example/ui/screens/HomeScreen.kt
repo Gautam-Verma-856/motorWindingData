@@ -33,11 +33,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.model.User
+import com.example.ui.theme.LocalIsDarkTheme
 import kotlinx.coroutines.delay
 
 @Composable
 fun FuturisticBackground() {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val bgColor = MaterialTheme.colorScheme.background
     Box(modifier = Modifier.fillMaxSize().background(bgColor)) {
         Box(
@@ -80,6 +81,8 @@ fun HomeScreen(
     currentUser: User?,
     motorViewModel: com.example.viewmodel.MotorViewModel? = null,
     unreadNotificationsCount: Int = 0,
+    isDarkTheme: Boolean = LocalIsDarkTheme.current,
+    onToggleTheme: () -> Unit = {},
     onOpenDrawer: () -> Unit = {},
     onLogout: () -> Unit = {}
 ) {
@@ -142,6 +145,37 @@ fun HomeScreen(
                             titleContentColor = MaterialTheme.colorScheme.onBackground
                         ),
                         actions = {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                                ),
+                                modifier = Modifier.padding(end = 4.dp)
+                            ) {
+                                IconButton(
+                                    onClick = onToggleTheme,
+                                    modifier = Modifier
+                                        .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                        .testTag("theme_toggle_button")
+                                ) {
+                                    AnimatedContent(
+                                        targetState = isDarkTheme,
+                                        transitionSpec = {
+                                            (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.8f))
+                                                .togetherWith(fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.8f))
+                                        },
+                                        label = "themeToggleIcon"
+                                    ) { dark ->
+                                        Icon(
+                                            imageVector = if (dark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                                            contentDescription = if (dark) "Switch to Light Mode" else "Switch to Dark Mode",
+                                            tint = if (dark) Color(0xFFFBBF24) else MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
                             Box(modifier = Modifier.padding(end = 4.dp)) {
                                 IconButton(
                                     onClick = { navController.navigate("notifications") },
@@ -263,9 +297,9 @@ fun GlassmorphicActionCard(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
     
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val backgroundColor = if (isDark) Color(0xFF1E1E2E).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.6f)
-    val borderColor = if (isDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.1f)
+    val isDark = LocalIsDarkTheme.current
+    val backgroundColor = if (isDark) Color(0xFF1E293B).copy(alpha = 0.72f) else Color.White.copy(alpha = 0.78f)
+    val borderColor = if (isDark) Color.White.copy(alpha = 0.16f) else Color(0xFF0F172A).copy(alpha = 0.10f)
 
     Surface(
         onClick = onClick,

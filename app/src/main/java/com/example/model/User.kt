@@ -12,7 +12,10 @@ data class User(
     val emailVerified: Boolean = false,
     val adminSeen: Boolean = false,
     val seen: Boolean = false,
-    val photoUrl: String = ""
+    val photoUrl: String = "",
+    val statusReason: String = "",
+    val statusUpdatedAt: Long = 0L,
+    val updatedAt: Long = 0L
 ) {
     fun isUnseen(): Boolean = role.trim().equals("public", ignoreCase = true) &&
         accountStatus.trim().equals("pending", ignoreCase = true) && !adminSeen && !seen

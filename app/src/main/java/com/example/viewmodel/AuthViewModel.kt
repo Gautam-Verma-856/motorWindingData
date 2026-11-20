@@ -69,6 +69,12 @@ class AuthViewModel : ViewModel() {
     private val _isFetchingUsers = MutableStateFlow(false)
     val isFetchingUsers = _isFetchingUsers.asStateFlow()
 
+    private val _usersError = MutableStateFlow<String?>(null)
+    val usersError = _usersError.asStateFlow()
+
+    private val _userActionMessage = MutableStateFlow<String?>(null)
+    val userActionMessage = _userActionMessage.asStateFlow()
+
     private val _isSessionChecking = MutableStateFlow(true)
     val isSessionChecking = _isSessionChecking.asStateFlow()
 
@@ -93,9 +99,11 @@ class AuthViewModel : ViewModel() {
 
     private fun checkSession() {
         viewModelScope.launch {
+            if (isTestSeeded) return@launch
             _isSessionChecking.value = true
             try {
                 val user = repo.fetchCurrentUserProfile()
+                if (isTestSeeded) return@launch
                 if (user != null) {
                     if (user.role == "public" && user.accountStatus != "active") {
                         repo.logout()
@@ -110,8 +118,10 @@ class AuthViewModel : ViewModel() {
                     _authState.value = AuthState.Idle
                 }
             } catch (_: Exception) {
-                _currentUser.value = null
-                _authState.value = AuthState.Idle
+                if (!isTestSeeded) {
+                    _currentUser.value = null
+                    _authState.value = AuthState.Idle
+                }
             } finally {
                 _isSessionChecking.value = false
             }
@@ -227,29 +237,88 @@ class AuthViewModel : ViewModel() {
         resetProfileUpdateState()
     }
     
-    fun fetchUsers() {
+    private var isTestSeeded: Boolean = false
+
+    fun fetchUsers(forceRefresh: Boolean = false) {
+        if (isTestSeeded && !forceRefresh) return
         viewModelScope.launch {
             _isFetchingUsers.value = true
+            _usersError.value = null
             val res = repo.getAllUsers()
-            res.onSuccess { _usersList.value = it }
+            res.onSuccess {
+                _usersList.value = it
+                _usersError.value = null
+            }
+            res.onFailure { err ->
+                _usersError.value = err.message ?: "Failed to load public users. Please try again."
+            }
             _isFetchingUsers.value = false
         }
     }
     
-    fun updateUserStatus(userId: String, status: String) {
+    fun updateUserStatus(userId: String, status: String, reason: String = "") {
+        val now = System.currentTimeMillis()
+        val normalizedStatus = status.trim().lowercase()
+        val cleanReason = if (normalizedStatus == "active" || normalizedStatus == "pending") "" else reason.trim()
+
         _usersList.value = _usersList.value.map {
-            if (it.id == userId) it.copy(accountStatus = status, adminSeen = true, seen = true) else it
+            if (it.id == userId) {
+                it.copy(
+                    accountStatus = status,
+                    adminSeen = true,
+                    seen = true,
+                    statusReason = cleanReason,
+                    statusUpdatedAt = now
+                )
+            } else {
+                it
+            }
+        }
+        val successMsg = when (normalizedStatus) {
+            "active" -> "User account activated."
+            "rejected" -> "User account rejected."
+            "blocked", "suspended" -> "User account suspended."
+            else -> "User status updated."
+        }
+        if (isTestSeeded) {
+            _userActionMessage.value = successMsg
+            return
         }
         viewModelScope.launch {
-            repo.updateUserStatus(userId, status)
-            fetchUsers()
+            val res = repo.updateUserStatus(userId, status, cleanReason)
+            res.onSuccess {
+                _userActionMessage.value = successMsg
+                fetchUsers()
+            }.onFailure { err ->
+                _userActionMessage.value = err.message ?: "Unable to update user status."
+            }
         }
+    }
+
+    fun clearUserActionMessage() {
+        _userActionMessage.value = null
+    }
+
+    fun seedAdminAndUsersForTest(
+        adminUser: User,
+        users: List<User>,
+        errorMessage: String? = null,
+        isLoading: Boolean = false
+    ) {
+        isTestSeeded = true
+        _currentUser.value = adminUser
+        _isSessionChecking.value = false
+        _usersList.value = users
+        _usersError.value = errorMessage
+        _isFetchingUsers.value = isLoading
+        _userActionMessage.value = null
     }
 
     fun markUserAsSeen(userId: String) {
         _usersList.value = _usersList.value.map {
             if (it.id == userId) it.copy(adminSeen = true, seen = true) else it
         }
+        if (isTestSeeded) return
         viewModelScope.launch {
             repo.markUserAsSeen(userId)
         }

@@ -11,11 +11,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ElectricBolt
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,14 +57,19 @@ import com.example.ui.screens.PublicChangePasswordScreen
 import com.example.ui.screens.PublicLoginScreen
 import com.example.ui.screens.PublicRegisterScreen
 import com.example.ui.screens.UserDashboardScreen
+import com.example.ui.screens.UserDetailScreen
 import com.example.ui.screens.UserManagementScreen
+import com.example.ui.theme.LocalIsDarkTheme
 import com.example.viewmodel.AuthViewModel
 import com.example.viewmodel.MotorViewModel
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 
 @Composable
-fun NavGraph() {
+fun NavGraph(
+    isDarkTheme: Boolean = LocalIsDarkTheme.current,
+    onToggleTheme: () -> Unit = {}
+) {
     val context = LocalContext.current
     val navController = rememberNavController()
     val authViewModel: AuthViewModel = viewModel()
@@ -76,7 +81,7 @@ fun NavGraph() {
     val usersList by authViewModel.usersList.collectAsState()
     val seenPublicKeys by authViewModel.seenPublicNotificationKeys.collectAsState()
 
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val drawerState = remember { DrawerState(initialValue = DrawerValue.Closed) }
     val coroutineScope = rememberCoroutineScope()
     var showLogoutDialog by remember { mutableStateOf(false) }
 
@@ -115,20 +120,26 @@ fun NavGraph() {
         )
     }
 
+    LaunchedEffect(Unit) {
+        if (drawerState.currentValue != DrawerValue.Closed || drawerState.targetValue != DrawerValue.Closed) {
+            drawerState.snapTo(DrawerValue.Closed)
+        }
+    }
+
     LaunchedEffect(currentUser?.id) {
+        if (drawerState.currentValue != DrawerValue.Closed || drawerState.targetValue != DrawerValue.Closed) {
+            drawerState.snapTo(DrawerValue.Closed)
+        }
         if (currentUser != null) {
             authViewModel.syncNotificationPreferences(context)
             if (currentUser?.isAdmin() == true) {
                 authViewModel.fetchUsers()
             }
-        } else if (drawerState.isOpen) {
-            drawerState.close()
         }
     }
 
-    val authRoutes = remember { setOf("splash", "public_login", "admin_login", "public_register") }
-    val topLevelDrawerRoutes = remember { setOf("home", "admin_dashboard", "user_dashboard") }
-    val gesturesEnabled = currentUser != null && rawRoute != null && rawRoute !in authRoutes && rawRoute in topLevelDrawerRoutes
+    // Open navigation drawer only when user explicitly taps the Menu icon (allow swipe-to-close when open)
+    val gesturesEnabled = false
 
     val performLogout: () -> Unit = {
         showLogoutDialog = false
@@ -142,7 +153,9 @@ fun NavGraph() {
     }
 
     val openDrawer: () -> Unit = {
-        coroutineScope.launch { drawerState.open() }
+        if (currentUser != null) {
+            coroutineScope.launch { drawerState.open() }
+        }
     }
 
     val navigateFromDrawer: (String) -> Unit = { targetRoute ->
@@ -261,6 +274,8 @@ fun NavGraph() {
                         currentUser = currentUser,
                         motorViewModel = motorViewModel,
                         unreadNotificationsCount = unreadNotificationsCount,
+                        isDarkTheme = isDarkTheme,
+                        onToggleTheme = onToggleTheme,
                         onOpenDrawer = openDrawer,
                         onLogout = { showLogoutDialog = true }
                     )
@@ -542,6 +557,26 @@ fun NavGraph() {
                         authViewModel = authViewModel,
                         motorViewModel = motorViewModel,
                         initialFilter = filter
+                    )
+                }
+            }
+            composable(
+                "user_detail/{userId}",
+                arguments = listOf(navArgument("userId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                if (currentUser == null || !currentUser!!.isAdmin()) {
+                    LaunchedEffect(Unit) {
+                        navController.navigate(if (currentUser == null) "public_login" else "home") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                } else {
+                    val userId = backStackEntry.arguments?.getString("userId").orEmpty()
+                    UserDetailScreen(
+                        navController = navController,
+                        authViewModel = authViewModel,
+                        motorViewModel = motorViewModel,
+                        userId = userId
                     )
                 }
             }

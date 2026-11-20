@@ -9,9 +9,9 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 
 class AuthRepository {
-    private val auth = FirebaseAuth.getInstance()
-    private val db = FirebaseFirestore.getInstance()
-    val currentUser get() = auth.currentUser
+    private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
+    private val db: FirebaseFirestore by lazy { FirebaseFirestore.getInstance() }
+    val currentUser get() = runCatching { auth.currentUser }.getOrNull()
 
     suspend fun login(email: String, password: String, expectedRole: String? = null): Result<User> {
         val trimmedEmail = email.trim()
@@ -309,7 +309,11 @@ class AuthRepository {
     suspend fun getAllUsers(): Result<List<User>> {
         return try {
             val query = db.collection("users").whereEqualTo("role", "public").get().await()
-            val users = query.toObjects(User::class.java)
+            val users = query.documents.mapNotNull { doc ->
+                doc.toObject(User::class.java)?.let { user ->
+                    if (user.id.isBlank()) user.copy(id = doc.id) else user
+                }
+            }
             Result.success(users)
         } catch (e: Exception) {
             val errorCode = if (e is FirebaseAuthException) e.errorCode else "UNKNOWN"
@@ -323,13 +327,21 @@ class AuthRepository {
         }
     }
 
-    suspend fun updateUserStatus(userId: String, status: String): Result<Unit> {
+    suspend fun updateUserStatus(userId: String, status: String, reason: String = ""): Result<Unit> {
         return try {
+            val normalizedStatus = status.trim().lowercase()
+            val cleanReason = if (normalizedStatus == "active" || normalizedStatus == "pending") {
+                ""
+            } else {
+                reason.trim()
+            }
             db.collection("users").document(userId).update(
                 mapOf(
                     "accountStatus" to status,
                     "adminSeen" to true,
-                    "seen" to true
+                    "seen" to true,
+                    "statusReason" to cleanReason,
+                    "statusUpdatedAt" to System.currentTimeMillis()
                 )
             ).await()
             Result.success(Unit)
@@ -474,10 +486,12 @@ class AuthRepository {
             val existingUser = snapshot.toObject(User::class.java)
                 ?: return Result.failure(Exception("Unable to load user profile."))
 
+            val now = System.currentTimeMillis()
             val updates = mapOf(
                 "name" to trimmedName,
                 "mobile" to trimmedMobile,
-                "photoUrl" to trimmedPhotoUrl
+                "photoUrl" to trimmedPhotoUrl,
+                "updatedAt" to now
             )
             userDocRef.update(updates).await()
 
@@ -486,7 +500,8 @@ class AuthRepository {
                     id = uid,
                     name = trimmedName,
                     mobile = trimmedMobile,
-                    photoUrl = trimmedPhotoUrl
+                    photoUrl = trimmedPhotoUrl,
+                    updatedAt = now
                 )
             )
         } catch (e: Exception) {

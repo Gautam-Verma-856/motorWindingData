@@ -126,8 +126,11 @@ class MotorViewModel : ViewModel() {
         searchCacheIsAdmin = null
     }
 
+    private var isTestSeededMotors: Boolean = false
+
     fun loadData(isAdmin: Boolean = lastIsAdmin, userId: String? = lastUserId) {
-        val currentFirebaseUser = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+        if (isTestSeededMotors) return
+        val currentFirebaseUser = runCatching { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser }.getOrNull()
         if (currentFirebaseUser == null) {
             clearData()
             return
@@ -744,6 +747,16 @@ class MotorViewModel : ViewModel() {
         if (_hasExecutedSearch.value && hasInitializedSearchCache) {
             recomputeSearchResults()
         }
+    }
+
+    fun seedMotorsForTest(
+        singlePhaseMotors: List<SinglePhaseMotor>,
+        threePhaseMotors: List<ThreePhaseMotor>
+    ) {
+        isTestSeededMotors = true
+        _singlePhaseMotors.value = singlePhaseMotors
+        _threePhaseMotors.value = threePhaseMotors
+        _isLoadingData.value = false
     }
 
     fun seedSearchDataForTest(

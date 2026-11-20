@@ -5,7 +5,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,6 +81,7 @@ import coil.compose.AsyncImage
 import com.example.BuildConfig
 import com.example.R
 import com.example.model.User
+import com.example.ui.theme.LocalIsDarkTheme
 import kotlinx.coroutines.launch
 
 data class DrawerMenuItem(
@@ -373,6 +373,11 @@ fun AppNavigationDrawerContainer(
     onNavigate: (String) -> Unit,
     content: @Composable () -> Unit
 ) {
+    if (user == null) {
+        content()
+        return
+    }
+
     val scope = rememberCoroutineScope()
 
     BackHandler(enabled = drawerState.isOpen) {
@@ -381,7 +386,7 @@ fun AppNavigationDrawerContainer(
         }
     }
 
-    if (showLogoutDialog && user != null) {
+    if (showLogoutDialog) {
         LogoutConfirmationDialog(
             isAdmin = user.isAdmin(),
             onConfirm = onConfirmLogout,
@@ -394,34 +399,32 @@ fun AppNavigationDrawerContainer(
         gesturesEnabled = gesturesEnabled || drawerState.isOpen,
         scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f),
         drawerContent = {
-            if (user != null) {
-                AppNavigationDrawerSheet(
-                    user = user,
-                    currentRoute = currentRoute,
-                    pendingMotorsCount = pendingMotorsCount,
-                    pendingUsersCount = pendingUsersCount,
-                    unreadNotificationsCount = unreadNotificationsCount,
-                    onCloseDrawer = {
-                        scope.launch { drawerState.close() }
-                    },
-                    onProfileClick = {
-                        scope.launch {
-                            drawerState.close()
-                            onNavigate("profile")
-                        }
-                    },
-                    onItemClick = { item ->
-                        scope.launch {
-                            drawerState.close()
-                            if (item.route == "logout") {
-                                onRequestLogoutDialog()
-                            } else {
-                                onNavigate(item.route)
-                            }
+            AppNavigationDrawerSheet(
+                user = user,
+                currentRoute = currentRoute,
+                pendingMotorsCount = pendingMotorsCount,
+                pendingUsersCount = pendingUsersCount,
+                unreadNotificationsCount = unreadNotificationsCount,
+                onCloseDrawer = {
+                    scope.launch { drawerState.close() }
+                },
+                onProfileClick = {
+                    scope.launch {
+                        drawerState.close()
+                        onNavigate("profile")
+                    }
+                },
+                onItemClick = { item ->
+                    scope.launch {
+                        drawerState.close()
+                        if (item.route == "logout") {
+                            onRequestLogoutDialog()
+                        } else {
+                            onNavigate(item.route)
                         }
                     }
-                )
-            }
+                }
+            )
         },
         content = content
     )
@@ -439,7 +442,7 @@ fun AppNavigationDrawerSheet(
     onItemClick: (DrawerMenuItem) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val sections = buildDrawerSections(
         user = user,
         pendingMotorsCount = pendingMotorsCount,

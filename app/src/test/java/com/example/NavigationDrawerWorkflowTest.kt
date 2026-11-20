@@ -644,5 +644,75 @@ class NavigationDrawerWorkflowTest {
         assertEquals(listOf("admin_dashboard"), navigatedRoutes)
     }
 
+    // -------------------------------------------------------------
+    // 12. Fresh launch & login transition keep drawer CLOSED until Menu icon tapped
+    // -------------------------------------------------------------
+    @Test
+    fun freshLaunchAndUserLoginTransition_keepsDrawerClosedUntilMenuIconTapped() {
+        var activeUser by mutableStateOf<User?>(null)
+        var drawerOpenedState = false
+        var drawerTargetClosed = true
+
+        composeRule.setContent {
+            MyApplicationTheme {
+                val navController = rememberNavController()
+                val drawerState = androidx.compose.runtime.remember {
+                    androidx.compose.material3.DrawerState(initialValue = DrawerValue.Closed)
+                }
+                val scope = rememberCoroutineScope()
+                drawerOpenedState = drawerState.isOpen
+                drawerTargetClosed = drawerState.targetValue == DrawerValue.Closed
+
+                AppNavigationDrawerContainer(
+                    drawerState = drawerState,
+                    user = activeUser,
+                    currentRoute = if (activeUser == null) "splash" else "home",
+                    pendingMotorsCount = 0,
+                    pendingUsersCount = 0,
+                    unreadNotificationsCount = 0,
+                    gesturesEnabled = false,
+                    showLogoutDialog = false,
+                    onRequestLogoutDialog = {},
+                    onDismissLogoutDialog = {},
+                    onConfirmLogout = {},
+                    onNavigate = {}
+                ) {
+                    if (activeUser == null) {
+                        Text("Splash")
+                    } else {
+                        HomeScreen(
+                            navController = navController,
+                            currentUser = activeUser,
+                            motorViewModel = null,
+                            unreadNotificationsCount = 0,
+                            onOpenDrawer = { scope.launch { drawerState.open() } }
+                        )
+                    }
+                }
+            }
+        }
+
+        composeRule.waitForIdle()
+        assertFalse("Drawer must be closed on splash launch", drawerOpenedState)
+        assertTrue(drawerTargetClosed)
+
+        // Simulate session resolved / user login -> Main Page
+        activeUser = sampleAdminUser()
+        composeRule.waitForIdle()
+        assertFalse("Drawer must stay CLOSED after transitioning to Main Page", drawerOpenedState)
+        assertTrue("Drawer targetValue must stay Closed", drawerTargetClosed)
+
+        // Tapping Menu icon opens the drawer
+        composeRule.onNodeWithTag("drawer_menu_button").assertIsDisplayed().performClick()
+        composeRule.waitForIdle()
+        assertTrue("Drawer must open when Menu icon is tapped", drawerOpenedState)
+        composeRule.onNodeWithTag("navigation_drawer_sheet").assertIsDisplayed()
+
+        // Selecting a menu item closes the drawer
+        composeRule.onNodeWithTag("drawer_item_go_to_dashboard").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        assertFalse("Drawer must close after selecting menu item", drawerOpenedState)
+    }
+
     private fun androidx.compose.ui.Modifier.onOpenTag(): androidx.compose.ui.Modifier = this
 }

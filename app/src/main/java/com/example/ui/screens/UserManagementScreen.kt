@@ -1,28 +1,78 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.ClearAll
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SwapVert
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import com.example.ui.components.ConfirmationDialog
+import com.example.model.User
+import com.example.model.UserAdminAction
+import com.example.model.UserManagementEngine
+import com.example.model.UserSortOption
+import com.example.model.UserStatusFilter
+import com.example.ui.components.PremiumPublicUserCard
+import com.example.ui.components.UserEmptyStateCard
+import com.example.ui.components.UserErrorStateCard
+import com.example.ui.components.UserLoadingSkeletonList
+import com.example.ui.components.UserOverviewSummaryGrid
+import com.example.ui.components.UserStatusActionDialog
 import com.example.viewmodel.AuthViewModel
 import com.example.viewmodel.MotorViewModel
+
+private const val USER_PAGE_SIZE = 20
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,88 +82,135 @@ fun UserManagementScreen(
     motorViewModel: MotorViewModel? = null,
     initialFilter: String? = null
 ) {
+    val currentUser by authViewModel.currentUser.collectAsState()
     val usersList by authViewModel.usersList.collectAsState()
     val isFetchingUsers by authViewModel.isFetchingUsers.collectAsState()
+    val usersError by authViewModel.usersError.collectAsState()
+    val userActionMessage by authViewModel.userActionMessage.collectAsState()
     val singlePhaseMotors = motorViewModel?.singlePhaseMotors?.collectAsState()?.value ?: emptyList()
     val threePhaseMotors = motorViewModel?.threePhaseMotors?.collectAsState()?.value ?: emptyList()
-    
-    var userToDelete by remember { mutableStateOf<String?>(null) }
-    var searchQuery by remember { mutableStateOf("") }
-    var statusFilter by remember { mutableStateOf(initialFilter?.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString() } ?: "All") }
-    var userToReject by remember { mutableStateOf<String?>(null) }
-    var selectedUserForDetails by remember { mutableStateOf<com.example.model.User?>(null) }
-    
-    if (selectedUserForDetails != null) {
-        val u = selectedUserForDetails!!
-        AlertDialog(
-            onDismissRequest = { selectedUserForDetails = null },
-            icon = { Icon(Icons.Rounded.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text(u.name, fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Email: ${u.email}", style = MaterialTheme.typography.bodyMedium)
-                    Text("Mobile: ${if (u.mobile.isNotBlank()) u.mobile else "Not provided"}", style = MaterialTheme.typography.bodyMedium)
-                    Text("Status: ${u.accountStatus.uppercase()}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                    Text("Email Verified: ${if (u.emailVerified) "Yes" else "No"}", style = MaterialTheme.typography.bodyMedium)
-                    if (u.createdAt > 0L) {
-                        val regDate = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(u.createdAt))
-                        Text("Registered: $regDate", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedUserForDetails = null }) {
-                    Text("Close")
-                }
+
+    // Strict Admin-only role guard
+    if (currentUser == null || !currentUser!!.isAdmin()) {
+        LaunchedEffect(currentUser) {
+            navController.navigate(if (currentUser == null) "public_login" else "home") {
+                popUpTo(0) { inclusive = true }
             }
-        )
+        }
+        return
     }
-    
-    if (userToReject != null) {
-        ConfirmationDialog(
-            title = "Reject Account?",
-            message = "Are you sure you want to reject this account?",
-            confirmText = "Reject",
-            isDestructive = true,
-            onConfirm = {
-                authViewModel.updateUserStatus(userToReject!!, "rejected")
-                userToReject = null
-            },
-            onDismiss = { userToReject = null }
-        )
+
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var statusFilter by rememberSaveable {
+        mutableStateOf(UserStatusFilter.fromInitialFilter(initialFilter))
     }
-    
+    var sortOption by rememberSaveable { mutableStateOf(UserSortOption.NEWEST) }
+    var visibleCount by remember(searchQuery, statusFilter, sortOption) {
+        mutableIntStateOf(USER_PAGE_SIZE)
+    }
+    var pendingAction by remember { mutableStateOf<Pair<User, UserAdminAction>?>(null) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
     LaunchedEffect(Unit) {
         authViewModel.fetchUsers()
-        motorViewModel?.loadData()
+        motorViewModel?.loadData(isAdmin = true, userId = currentUser?.id)
     }
-    
-    if (userToDelete != null) {
-        ConfirmationDialog(
-            title = "Delete User?",
-            message = "This action cannot be undone and will remove the user permanently.",
-            confirmText = "Delete",
-            isDestructive = true,
-            onConfirm = {
-                authViewModel.deleteUser(userToDelete!!)
-                userToDelete = null
+
+    LaunchedEffect(userActionMessage) {
+        val message = userActionMessage
+        if (!message.isNullOrBlank()) {
+            snackbarHostState.showSnackbar(message)
+            authViewModel.clearUserActionMessage()
+        }
+    }
+
+    val overviewStats = remember(usersList) {
+        UserManagementEngine.computeOverviewStats(usersList)
+    }
+
+    val filteredUsers = remember(usersList, searchQuery, statusFilter, sortOption) {
+        UserManagementEngine.filterAndSortUsers(
+            users = usersList,
+            query = searchQuery,
+            statusFilter = statusFilter,
+            sortOption = sortOption
+        )
+    }
+
+    val paginatedUsers = remember(filteredUsers, visibleCount) {
+        filteredUsers.take(visibleCount)
+    }
+
+    val hasActiveFilters = searchQuery.isNotBlank() ||
+        statusFilter != UserStatusFilter.ALL ||
+        sortOption != UserSortOption.NEWEST
+
+    val clearFilters: () -> Unit = {
+        searchQuery = ""
+        statusFilter = UserStatusFilter.ALL
+        sortOption = UserSortOption.NEWEST
+    }
+
+    if (pendingAction != null) {
+        val (targetUser, action) = pendingAction!!
+        UserStatusActionDialog(
+            user = targetUser,
+            action = action,
+            onConfirm = { reason ->
+                val targetStatus = when (action) {
+                    UserAdminAction.APPROVE, UserAdminAction.ACTIVATE -> "active"
+                    UserAdminAction.REJECT -> "rejected"
+                    UserAdminAction.SUSPEND -> "blocked"
+                }
+                authViewModel.updateUserStatus(targetUser.id, targetStatus, reason)
+                pendingAction = null
             },
-            onDismiss = { userToDelete = null }
+            onDismiss = { pendingAction = null }
         )
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets.safeDrawing,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Column {
-                        Text("Manage Users", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("Manage registered public accounts & submissions", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            text = "Manage Public Users",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${overviewStats.totalPublicUsers} registered public accounts",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
+                    IconButton(
+                        onClick = { navController.navigateUp() },
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag("user_management_back_button")
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            authViewModel.fetchUsers(forceRefresh = true)
+                            motorViewModel?.loadData(isAdmin = true, userId = currentUser?.id)
+                        },
+                        enabled = !isFetchingUsers,
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .testTag("refresh_users_button")
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Refresh users")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -123,338 +220,204 @@ fun UserManagementScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("Search by name, email or mobile...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear")
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 720.dp)
+                    .testTag("user_management_list"),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // 1. Dashboard Overview Summary Cards
+                item(key = "overview") {
+                    UserOverviewSummaryGrid(
+                        stats = overviewStats,
+                        selectedFilter = statusFilter,
+                        onSelectFilter = { selected ->
+                            statusFilter = if (statusFilter == selected && selected != UserStatusFilter.ALL) {
+                                UserStatusFilter.ALL
+                            } else {
+                                selected
                             }
                         }
-                    },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.surfaceVariant,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    singleLine = true
-                )
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                androidx.compose.foundation.lazy.LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val filters = listOf("All", "Pending", "Active", "Rejected", "Suspended")
-                    items(filters) { filter ->
-                        FilterChip(
-                            selected = statusFilter == filter,
-                            onClick = { statusFilter = filter },
-                            label = { Text(filter) }
+                    )
+                }
+
+                // 2. Search Input & Filters
+                item(key = "search_and_filters") {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("user_search_input"),
+                            placeholder = { Text("Search by Name, Email, Mobile or User ID...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                if (searchQuery.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { searchQuery = "" },
+                                        modifier = Modifier.testTag("clear_user_search_button")
+                                    ) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear search")
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            singleLine = true
                         )
-                    }
-                }
-            }
-            
-            val filteredUsers = usersList.filter { user ->
-                val matchesSearch = user.name.contains(searchQuery, ignoreCase = true) || 
-                                    user.email.contains(searchQuery, ignoreCase = true) ||
-                                    user.mobile.contains(searchQuery, ignoreCase = true)
-                val matchesFilter = when (statusFilter) {
-                    "Pending" -> user.accountStatus == "pending"
-                    "Active" -> user.accountStatus == "active"
-                    "Rejected" -> user.accountStatus == "rejected"
-                    "Suspended" -> user.accountStatus == "blocked" || user.accountStatus == "suspended"
-                    else -> true
-                }
-                user.role == "public" && matchesSearch && matchesFilter
-            }
-            
-            if (isFetchingUsers) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            } else if (filteredUsers.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            modifier = Modifier.size(100.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
-                            contentAlignment = Alignment.Center
+
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Person,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.primary
+                            items(UserStatusFilter.entries) { filter ->
+                                FilterChip(
+                                    selected = statusFilter == filter,
+                                    onClick = { statusFilter = filter },
+                                    label = { Text(filter.label) },
+                                    modifier = Modifier
+                                        .defaultMinSize(minHeight = 40.dp)
+                                        .testTag("filter_chip_${filter.name.lowercase()}")
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SwapVert,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                UserSortOption.entries.forEach { option ->
+                                    FilterChip(
+                                        selected = sortOption == option,
+                                        onClick = { sortOption = option },
+                                        label = { Text(option.label) },
+                                        modifier = Modifier
+                                            .defaultMinSize(minHeight = 40.dp)
+                                            .testTag("sort_chip_${option.name.lowercase()}")
+                                    )
+                                }
+                            }
+
+                            if (hasActiveFilters) {
+                                TextButton(
+                                    onClick = clearFilters,
+                                    modifier = Modifier
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .testTag("user_clear_filters_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ClearAll,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Clear Filters")
+                                }
+                            }
+                        }
+
+                        if (!isFetchingUsers && usersError == null) {
+                            Text(
+                                text = "Showing ${paginatedUsers.size} of ${filteredUsers.size} users",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("No users found", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Try adjusting your search query.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(filteredUsers) { user ->
-                        val userSingleCount = singlePhaseMotors.count { it.createdBy == user.id || (it.createdByName.isNotBlank() && it.createdByName.equals(user.name, ignoreCase = true)) }
-                        val userThreeCount = threePhaseMotors.count { it.createdBy == user.id || (it.createdByName.isNotBlank() && it.createdByName.equals(user.name, ignoreCase = true)) }
-                        val totalUserMotors = userSingleCount + userThreeCount
 
-                        val statusColor = when (user.accountStatus) {
-                            "active" -> Color(0xFF10B981)
-                            "pending" -> Color(0xFFF59E0B)
-                            "rejected" -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.error
+                // 3. Loading, Error, Empty, or User Cards
+                if (isFetchingUsers && usersList.isEmpty()) {
+                    item(key = "loading_skeleton") {
+                        UserLoadingSkeletonList()
+                    }
+                } else if (usersError != null && usersList.isEmpty()) {
+                    item(key = "error_state") {
+                        UserErrorStateCard(
+                            message = usersError ?: "Unable to fetch users.",
+                            onRetry = { authViewModel.fetchUsers(forceRefresh = true) }
+                        )
+                    }
+                } else if (filteredUsers.isEmpty()) {
+                    item(key = "empty_state") {
+                        UserEmptyStateCard(
+                            hasFilters = hasActiveFilters,
+                            onClearFilters = clearFilters
+                        )
+                    }
+                } else {
+                    items(
+                        items = paginatedUsers,
+                        key = { it.id.ifBlank { it.email } }
+                    ) { user ->
+                        val submissionStats = remember(user.id, user.name, singlePhaseMotors, threePhaseMotors) {
+                            UserManagementEngine.computeUserSubmissions(
+                                user = user,
+                                singlePhaseMotors = singlePhaseMotors,
+                                threePhaseMotors = threePhaseMotors
+                            )
                         }
-                        val statusText = when (user.accountStatus) {
-                            "pending" -> "PENDING APPROVAL"
-                            "active" -> "ACTIVE / APPROVED"
-                            "rejected" -> "REJECTED"
-                            "blocked", "suspended" -> "SUSPENDED"
-                            else -> user.accountStatus.uppercase()
-                        }
-
-                        ElevatedCard(
-                            onClick = {
+                        PremiumPublicUserCard(
+                            user = user,
+                            submissionStats = submissionStats,
+                            onViewDetails = {
                                 if (user.isUnseen()) {
                                     authViewModel.markUserAsSeen(user.id)
                                 }
-                                selectedUserForDetails = user
+                                navController.navigate("user_detail/${user.id}")
                             },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                // Header: Avatar, Name, Email, Status Badge
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier.size(48.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(user.name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                    }
-                                    Spacer(modifier = Modifier.width(14.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(user.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                            if (user.isUnseen()) {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .background(Color(0xFFEF4444), CircleShape)
-                                                )
-                                            }
-                                        }
-                                        Text(user.email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = statusColor.copy(alpha = 0.15f)
-                                    ) {
-                                        Text(
-                                            statusText, 
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            style = MaterialTheme.typography.labelSmall, 
-                                            fontWeight = FontWeight.Bold, 
-                                            color = statusColor
-                                        )
-                                    }
-                                }
+                            onActionClick = { action ->
+                                pendingAction = user to action
+                            }
+                        )
+                    }
 
-                                Spacer(modifier = Modifier.height(14.dp))
-                                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                // Mobile Number Row
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Phone,
-                                            contentDescription = "Mobile Number",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = if (user.mobile.isNotBlank()) user.mobile else "No mobile provided",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Medium,
-                                            color = if (user.mobile.isNotBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-
-                                    if (user.mobile.isNotBlank()) {
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant
-                                        ) {
-                                            Text(
-                                                text = "Mobile Added",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                // Email Verification Status Row
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Email,
-                                            contentDescription = "Email Verification",
-                                            tint = if (user.emailVerified) Color(0xFF10B981) else Color(0xFFF59E0B),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = if (user.emailVerified) "Email Verified" else "Email Verification Pending",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (user.emailVerified) Color(0xFF10B981) else Color(0xFFF59E0B)
-                                        )
-                                    }
-
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = if (user.emailVerified) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f),
-                                        border = BorderStroke(1.dp, if (user.emailVerified) Color(0xFF10B981).copy(alpha = 0.3f) else Color(0xFFF59E0B).copy(alpha = 0.3f))
-                                    ) {
-                                        Text(
-                                            text = if (user.emailVerified) "Verified" else "Pending",
-                                            color = if (user.emailVerified) Color(0xFF10B981) else Color(0xFFF59E0B),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                // Contributed Motor Data summary row
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.ElectricBolt,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        if (totalUserMotors > 0) {
-                                            Text(
-                                                text = "Added Motors: $totalUserMotors ($userSingleCount 1-Phase • $userThreeCount 3-Phase)",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                        } else {
-                                            Text(
-                                                text = "No motor data submitted yet",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                                
-                                Spacer(modifier = Modifier.height(14.dp))
-                                
-                                // Action Buttons
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    when (user.accountStatus) {
-                                        "pending" -> {
-                                            OutlinedButton(
-                                                onClick = { authViewModel.updateUserStatus(user.id, "active") },
-                                                modifier = Modifier.weight(1f),
-                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF10B981))
-                                            ) {
-                                                Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                Spacer(Modifier.width(4.dp))
-                                                Text("Approve")
-                                            }
-                                            OutlinedButton(
-                                                onClick = { userToReject = user.id },
-                                                modifier = Modifier.weight(1f),
-                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                            ) {
-                                                Icon(Icons.Rounded.Block, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                Spacer(Modifier.width(4.dp))
-                                                Text("Reject")
-                                            }
-                                        }
-                                        "active" -> {
-                                            OutlinedButton(
-                                                onClick = { authViewModel.updateUserStatus(user.id, "blocked") },
-                                                modifier = Modifier.weight(1f)
-                                            ) {
-                                                Icon(Icons.Rounded.Block, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                Spacer(Modifier.width(4.dp))
-                                                Text("Suspend")
-                                            }
-                                        }
-                                        else -> {
-                                            OutlinedButton(
-                                                onClick = { authViewModel.updateUserStatus(user.id, "active") },
-                                                modifier = Modifier.weight(1f),
-                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF10B981))
-                                            ) {
-                                                Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                Spacer(Modifier.width(4.dp))
-                                                Text("Activate")
-                                            }
-                                        }
-                                    }
-                                    
-                                    IconButton(
-                                        onClick = { userToDelete = user.id },
-                                        colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                    ) {
-                                        Icon(Icons.Rounded.Delete, contentDescription = "Delete User")
-                                    }
-                                }
+                    if (paginatedUsers.size < filteredUsers.size) {
+                        item(key = "load_more_footer") {
+                            val remaining = filteredUsers.size - paginatedUsers.size
+                            OutlinedButton(
+                                onClick = { visibleCount += USER_PAGE_SIZE },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp)
+                                    .testTag("load_more_users_button"),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Icon(Icons.Rounded.ExpandMore, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Load More Users ($remaining remaining)")
                             }
                         }
                     }
+                }
+
+                item(key = "bottom_spacer") {
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
